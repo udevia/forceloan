@@ -307,12 +307,12 @@ export const useSync = () => {
           const orderPayload = {
             user: o.customer_id, // Ahora es un ID válido del backend
             products: o.items.map(i => ({ 
-              product: i.product_id, 
+              product: [i.product_id], // Payload hasMany: true requiere un array de IDs
               quantity: String(i.quantity), 
               price: String(i.price) 
             })),
-            total: Number(o.total),
-            totalBs: Number(o.totalBs),
+            total: String(o.total),
+            totalBs: String(o.totalBs),
             exchange: exchangeId,
             exchangeRate: Number(o.exchangeRate),
             isCredit: Boolean(o.is_credit),
@@ -328,7 +328,11 @@ export const useSync = () => {
         } catch (e: any) {
           console.error('Error subiendo pedido:', e);
           if (e.response && e.response.data) {
-             console.error('Detalles del backend:', e.response.data);
+             const errorMsg = JSON.stringify(e.response.data.errors || e.response.data);
+             console.error('Detalles del backend:', errorMsg);
+             alert('El backend rechazó el pedido. Razón: ' + errorMsg);
+          } else {
+             alert('Error de conexión o timeout al subir el pedido.');
           }
         }
       }
