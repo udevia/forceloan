@@ -215,9 +215,18 @@ export const Orders = () => {
                   <div className="text-right flex items-center space-x-3">
                     <div className="text-right">
                       <p className="font-bold text-gray-900">${order.total.toFixed(2)}</p>
-                      <span className={`text-[10px] px-2 py-1 rounded-full inline-block mt-1 ${order.sync_status === 'pending' ? 'bg-yellow-100 text-yellow-800' : 'bg-green-100 text-green-800'}`}>
-                        {order.sync_status === 'pending' ? 'Pendiente' : 'Sincronizado'}
-                      </span>
+                      {order.sync_status === 'pending' ? (
+                        <span className="text-[10px] px-2 py-1 rounded-full inline-block mt-1 bg-yellow-100 text-yellow-800">
+                          Pendiente
+                        </span>
+                      ) : (
+                        <span 
+                          className="text-[10px] px-2 py-1 rounded-full inline-block mt-1 font-medium shadow-sm text-white"
+                          style={{ backgroundColor: order.status_color || '#10b981' }}
+                        >
+                          {order.status_name || 'Sincronizado'}
+                        </span>
+                      )}
                     </div>
                     {order.sync_status === 'pending' && (
                       <div className="flex space-x-1 border-l pl-3 ml-3 border-gray-200">

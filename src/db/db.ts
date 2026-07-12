@@ -50,7 +50,10 @@ export interface OrderItem {
 }
 
 export interface Order {
-  id?: string; // UUID generado localmente
+  id?: string | number; // UUID/number generado localmente
+  backend_id?: string; // ID en Payload CMS
+  status_name?: string; // Nombre del estado del pedido
+  status_color?: string; // Color del estado
   customer_id: string;
   items: OrderItem[];
   total: number;
@@ -93,6 +96,14 @@ export class ForceLoanDB extends Dexie {
       customers: '++id, name, sync_status',
       products: 'id, name, sku',
       orders: '++id, customer_id, sync_status',
+      paymentMethods: 'id',
+      exchange: 'id'
+    });
+
+    this.version(3).stores({
+      customers: '++id, name, sync_status',
+      products: 'id, name, sku',
+      orders: '++id, customer_id, sync_status, backend_id',
       paymentMethods: 'id',
       exchange: 'id'
     });

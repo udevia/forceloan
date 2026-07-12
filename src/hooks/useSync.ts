@@ -199,6 +199,68 @@ export const useSync = () => {
         console.error('Error bajando productos:', err);
       }
 
+      // 5. Descargar estados de pedidos / Historial de Pedidos del Vendedor
+      try {
+        let hasNextPage = true;
+        let page = 1;
+        let allBackendOrders: any[] = [];
+        const userStr = localStorage.getItem('payload-user');
+        const userObj = userStr ? JSON.parse(userStr) : null;
+        
+        if (userObj && userObj.id) {
+          while (hasNextPage) {
+            const ordersRes = await apiClient.get(`/ordenes?where[createdBy][equals]=${userObj.id}&limit=100&page=${page}`);
+            if (ordersRes.status === 200) {
+              allBackendOrders = [...allBackendOrders, ...ordersRes.data.docs];
+              hasNextPage = ordersRes.data.hasNextPage;
+              page++;
+            } else {
+              hasNextPage = false;
+            }
+          }
+          
+          if (allBackendOrders.length > 0) {
+            for (const bOrder of allBackendOrders) {
+              const existingLocal = await db.orders.where('backend_id').equals(bOrder.id).first();
+              if (existingLocal) {
+                // Actualizar estado
+                await db.orders.update(Number(existingLocal.id!), {
+                  status_name: bOrder.status?.name || 'Recibido',
+                  status_color: bOrder.status?.color || '#10b981'
+                });
+              } else {
+                // Reconstruir pedido en formato Dexie (Backups secundarios o dispositivos nuevos)
+                const customerId = typeof bOrder.user === 'object' ? bOrder.user?.id : bOrder.user;
+                
+                if (customerId) {
+                  await db.orders.add({
+                    backend_id: bOrder.id,
+                    customer_id: customerId,
+                    items: bOrder.products?.map((p: any) => ({
+                      product_id: Array.isArray(p.product) ? (p.product[0]?.id || p.product[0]) : p.product,
+                      name: Array.isArray(p.product) ? (p.product[0]?.title || p.product[0]?.name || 'Producto') : 'Producto',
+                      quantity: Number(p.quantity),
+                      price: Number(p.price)
+                    })) || [],
+                    total: Number(bOrder.total),
+                    totalBs: Number(bOrder.totalBs || 0),
+                    exchangeRate: Number(bOrder.exchangeRate || 0),
+                    is_credit: Boolean(bOrder.isCredit),
+                    sync_status: 'synced',
+                    status_name: bOrder.status?.name || 'Recibido',
+                    status_color: bOrder.status?.color || '#10b981',
+                    created_at: new Date(bOrder.createdAt).getTime()
+                  });
+                }
+              }
+            }
+            console.log(`Estados actualizados y/o reconstruidos de ${allBackendOrders.length} pedidos históricos.`);
+          }
+        }
+      } catch (err) {
+        console.error('Error bajando historial de pedidos:', err);
+      }
+
       alert('¡Sincronización descendente completada exitosamente!');
     } catch (error) {
       console.error('Error descargando clientes:', error);
@@ -346,7 +408,12 @@ export const useSync = () => {
           const res = await apiClient.post('/ordenes', orderPayload);
           
           if (res.status === 201 || res.status === 200) {
-            await db.orders.update(Number(o.id), { sync_status: 'synced' });
+            await db.orders.update(Number(o.id), { 
+              sync_status: 'synced',
+              backend_id: res.data.doc.id,
+              status_name: res.data.doc.status?.name || 'Nuevo',
+              status_color: res.data.doc.status?.color || '#10b981'
+            });
           }
         } catch (e: any) {
           console.error('Error subiendo pedido:', e);
