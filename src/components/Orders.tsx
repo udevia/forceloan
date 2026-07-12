@@ -3,8 +3,9 @@ import { useCartStore } from '../store/cartStore';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db/db';
 import type { OrderItem } from '../db/db';
-import { Trash2, ShoppingBag, Plus, Minus, CheckCircle, Edit, X } from 'lucide-react';
+import { Trash2, ShoppingBag, Plus, Minus, CheckCircle, Edit, X, Share2 } from 'lucide-react';
 import { CheckoutModal } from './CheckoutModal';
+import { generateOrderPDF } from '../utils/pdfGenerator';
 
 export const Orders = () => {
   const { items, removeItem, updateQuantity, clearCart, getTotal, selectedCustomerId, setCustomer } = useCartStore();
@@ -59,6 +60,46 @@ export const Orders = () => {
   const handleDeleteOrder = async (id: number | string) => {
     if (window.confirm('¿Seguro que deseas eliminar este pedido local?')) {
       await db.orders.delete(Number(id));
+    }
+  };
+
+  const handleWhatsAppShare = async (order: any, customer: any) => {
+    try {
+      const file = await generateOrderPDF(order, customer);
+      
+      const phoneText = customer?.phone ? customer.phone.replace(/\D/g, '') : '';
+      const orderId = order.id || order.backend_id || 'PENDIENTE';
+      const textMessage = `Hola ${customer?.name || ''}, aquí tienes el resumen de tu pedido N° ${orderId} por $${order.total.toFixed(2)}.`;
+      
+      // Intentar usar Web Share API primero (funciona en móviles y adjunta el PDF)
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: `Pedido ${orderId}`,
+          text: textMessage,
+          files: [file]
+        });
+        return;
+      }
+      
+      // Fallback para PC / navegadores viejos: descargar PDF y abrir WhatsApp Web
+      alert('Tu dispositivo no soporta adjuntar archivos directamente a WhatsApp. El PDF se descargará y se abrirá WhatsApp para que lo envíes manualmente.');
+      
+      // Descargar archivo
+      const url = URL.createObjectURL(file);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = file.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      // Abrir WhatsApp Web
+      const waUrl = `https://wa.me/${phoneText}?text=${encodeURIComponent(textMessage)}`;
+      window.open(waUrl, '_blank');
+      
+    } catch (err) {
+      console.error('Error compartiendo PDF:', err);
     }
   };
 
@@ -228,16 +269,25 @@ export const Orders = () => {
                         </span>
                       )}
                     </div>
-                    {order.sync_status === 'pending' && (
-                      <div className="flex space-x-1 border-l pl-3 ml-3 border-gray-200">
-                        <button onClick={() => handleEditOrder(order)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-full" title="Editar">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button onClick={() => handleDeleteOrder(order.id!)} className="p-2 text-red-500 hover:bg-red-50 rounded-full" title="Eliminar">
-                          <X className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
+                    <div className="flex space-x-1 border-l pl-3 ml-3 border-gray-200">
+                      <button 
+                        onClick={() => handleWhatsAppShare(order, customer)} 
+                        className="p-2 text-green-500 hover:bg-green-50 rounded-full" 
+                        title="Enviar por WhatsApp"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                      {order.sync_status === 'pending' && (
+                        <>
+                          <button onClick={() => handleEditOrder(order)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-full" title="Editar">
+                            <Edit className="w-4 h-4" />
+                          </button>
+                          <button onClick={() => handleDeleteOrder(order.id!)} className="p-2 text-red-500 hover:bg-red-50 rounded-full" title="Eliminar">
+                            <X className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 </li>
               );
