@@ -65,30 +65,37 @@ export const Orders = () => {
 
   const handleWhatsAppShare = async (order: any, customer: any) => {
     try {
-      const file = await generateOrderPDF(order, customer);
-      
       const phoneText = customer?.phone ? customer.phone.replace(/\D/g, '') : '';
       const orderId = order.id || order.backend_id || 'PENDIENTE';
-      const textMessage = `Hola ${customer?.name || ''}, aquí tienes el resumen de tu pedido N° ${orderId} por $${order.total.toFixed(2)}.`;
+      const dateStr = new Date(order.created_at || Date.now()).toLocaleString('es-VE', { dateStyle: 'short', timeStyle: 'short' });
+      const tipoCondicion = order.is_credit ? 'Realizar pago al llegar despacho' : 'Contado';
+
+      // Construir la lista de productos
+      let itemsText = '';
+      order.items.forEach((item: any) => {
+        const subtotal = item.price * item.quantity;
+        itemsText += `▪️ ${item.quantity}x ${item.product_name} - *$${subtotal.toFixed(2)}*\n`;
+      });
+
+      // Construir el mensaje completo con formato WhatsApp (*negrita*, _cursiva_)
+      const textMessage = `*🏢 INVERSIONES LOAN*\n` +
+                          `*Resumen de Pedido N° ${orderId}*\n\n` +
+                          `👤 *Cliente:* ${customer?.name || 'Consumidor'}\n` +
+                          `📅 *Fecha:* ${dateStr}\n` +
+                          `💳 *Condición:* ${tipoCondicion}\n\n` +
+                          `📦 *DETALLE DE PRODUCTOS:*\n` +
+                          `${itemsText}\n` +
+                          `💰 *TOTAL A PAGAR: $${order.total.toFixed(2)}*\n\n` +
+                          `_Pagos en Bs calculados a la tasa Dólar BCV del día del despacho._\n\n` +
+                          `⚠️ *Nota administrativa:* Una vez llega el despacho a la puerta, el cliente debe realizar el pago para recibir la mercancía. Sin pago validado, no se procederá a la entrega.\n\n` +
+                          `¡Gracias por su compra!`;
       
-      // Opción 2: Descargar archivo y abrir chat directo (Evita tener que guardar el contacto)
-      const url = URL.createObjectURL(file);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = file.name;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      
-      // Esperar un instante para que el navegador inicie la descarga antes de cambiar de app
-      setTimeout(() => {
-        const waUrl = `https://wa.me/${phoneText}?text=${encodeURIComponent(textMessage)}`;
-        window.open(waUrl, '_blank');
-      }, 500);
+      // Abrir chat directo en WhatsApp
+      const waUrl = `https://wa.me/${phoneText}?text=${encodeURIComponent(textMessage)}`;
+      window.open(waUrl, '_blank');
       
     } catch (err) {
-      console.error('Error generando/compartiendo PDF:', err);
+      console.error('Error generando mensaje de WhatsApp:', err);
       alert('Hubo un error al generar el recibo.');
     }
   };
