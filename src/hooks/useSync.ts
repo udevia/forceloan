@@ -31,9 +31,12 @@ export const useSync = () => {
     }
     
     setIsDownloading(true);
-    console.log('Descargando clientes...');
+    console.log('Descargando datos...');
 
     try {
+      // 0. Subir clientes y pedidos pendientes ANTES de descargar
+      await triggerSync();
+
       // 1. Bajar clientes
       try {
         let hasNextPage = true;
@@ -146,7 +149,46 @@ export const useSync = () => {
         console.error('Error bajando tasa de cambio:', err);
       }
 
-      // 4. Descargar productos disponibles para la app
+      // 4. Descargar historial de pedidos (Downstream)
+      try {
+        const userStr = localStorage.getItem('payload-user');
+        const vendorId = userStr ? JSON.parse(userStr).id : null;
+        
+        if (vendorId) {
+          // Buscamos los pedidos creados por este vendedor (últimos 100)
+          const ordersRes = await apiClient.get(`/ordenes?limit=100&sort=-createdAt&where[createdBy.value][equals]=${vendorId}`);
+          if (ordersRes.status === 200) {
+            const downloadedOrders = ordersRes.data.docs.map((o: any) => ({
+              id: o.id,
+              customer_id: typeof o.user === 'object' ? o.user.id : o.user,
+              items: Array.isArray(o.products) ? o.products.map((p: any) => ({
+                product_id: typeof p.product === 'object' ? p.product.id : p.product,
+                name: typeof p.product === 'object' ? (p.product.title || 'Producto') : 'Producto',
+                quantity: Number(p.quantity),
+                price: Number(p.price)
+              })) : [],
+              total: Number(o.total || 0),
+              totalBs: Number(o.totalBs || 0),
+              exchangeRate: Number(o.exchangeRate || 1),
+              is_credit: Boolean(o.isCredit),
+              sync_status: 'synced',
+              created_at: new Date(o.createdAt).getTime()
+            }));
+
+            // Mantener solo los pedidos 'pending' que no se hayan subido aún
+            const pendingOrders = await db.orders.where('sync_status').equals('pending').toArray();
+            
+            // Reemplazar historial asegurando que no sobreescribimos los pendientes locales
+            await db.orders.clear();
+            await db.orders.bulkAdd([...downloadedOrders, ...pendingOrders]);
+            console.log(`${downloadedOrders.length} pedidos descargados del historial.`);
+          }
+        }
+      } catch (err) {
+        console.error('Error bajando historial de pedidos:', err);
+      }
+
+      // 5. Descargar productos disponibles para la app
       try {
         let hasNextPage = true;
         let page = 1;

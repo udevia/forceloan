@@ -133,10 +133,25 @@ export const Orders = () => {
                       className="w-full border border-gray-300 rounded-lg p-3 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
                     />
                     <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 shadow-inner bg-gray-50">
-                      {customers
-                        .filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase()))
-                        .slice(0, 30)
-                        .map(c => (
+                      {(() => {
+                        const userStr = localStorage.getItem('payload-user');
+                        const vendorId = userStr ? JSON.parse(userStr).id : null;
+                        
+                        const filteredCustomers = customers.filter(c => {
+                          if (customerSearch) {
+                            return c.name.toLowerCase().includes(customerSearch.toLowerCase()) || 
+                                   (c.dni && c.dni.includes(customerSearch));
+                          } else {
+                            // Si no hay búsqueda, mostrar solo los propios del vendedor
+                            return String(c.createdBy) === String(vendorId);
+                          }
+                        });
+
+                        if (filteredCustomers.length === 0) {
+                          return <p className="p-3 text-sm text-gray-500 text-center">No se encontraron clientes.</p>;
+                        }
+
+                        return filteredCustomers.slice(0, 30).map(c => (
                           <div 
                             key={c.id} 
                             onClick={() => setCustomer(c.id!)}
@@ -145,10 +160,8 @@ export const Orders = () => {
                             <p className="font-medium text-gray-800 text-sm">{c.name}</p>
                             {c.dni && <p className="text-xs text-gray-500">{c.dniType}-{c.dni}</p>}
                           </div>
-                      ))}
-                      {customers.filter(c => c.name.toLowerCase().includes(customerSearch.toLowerCase())).length === 0 && (
-                        <p className="p-3 text-sm text-gray-500 text-center">No se encontraron clientes.</p>
-                      )}
+                        ));
+                      })()}
                     </div>
                   </div>
                 )}
