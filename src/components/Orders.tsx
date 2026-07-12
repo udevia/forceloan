@@ -5,7 +5,6 @@ import { db } from '../db/db';
 import type { OrderItem } from '../db/db';
 import { Trash2, ShoppingBag, Plus, Minus, CheckCircle, Edit, X, Share2 } from 'lucide-react';
 import { CheckoutModal } from './CheckoutModal';
-import { generateOrderPDF } from '../utils/pdfGenerator';
 
 export const Orders = () => {
   const { items, removeItem, updateQuantity, clearCart, getTotal, selectedCustomerId, setCustomer } = useCartStore();
