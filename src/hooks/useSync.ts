@@ -180,11 +180,15 @@ export const useSync = () => {
           await db.products.bulkAdd(allProducts);
           console.log(`${allProducts.length} productos descargados.`);
           
-          // Forzar la descarga de las imágenes en segundo plano para que el Service Worker las guarde en caché offline
+          // Forzar la descarga de las imágenes en segundo plano paulatinamente para no congelar el Service Worker
           const imageUrls = allProducts.map((p: any) => p.image_url).filter(Boolean);
-          for (const url of imageUrls) {
-             fetch(url, { mode: 'no-cors' }).catch(() => {});
-          }
+          setTimeout(async () => {
+             for (const url of imageUrls) {
+                 await fetch(url, { mode: 'no-cors' }).catch(() => {});
+                 // Pequeño descanso de 50ms entre cada imagen para no colapsar la red
+                 await new Promise(r => setTimeout(r, 50));
+             }
+          }, 100);
         } else {
           console.log(`No hay productos disponibles para la app. Catálogo local vaciado.`);
         }
