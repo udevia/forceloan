@@ -157,7 +157,9 @@ export const useSync = () => {
               sku: p.sku || p.id,
               price: p.price || 0,
               stock: p.stockMain || 0,
-              image_url: p.images?.[0]?.image?.url || '',
+              image_url: p.images?.[0]?.image?.url ? 
+                (p.images[0].image.url.startsWith('http') ? p.images[0].image.url : `https://galpon.loanmayorista.site${p.images[0].image.url}`) 
+                : '',
               last_updated: Date.now()
             }));
             allProducts = [...allProducts, ...products];
@@ -173,6 +175,12 @@ export const useSync = () => {
         if (allProducts.length > 0) {
           await db.products.bulkAdd(allProducts);
           console.log(`${allProducts.length} productos descargados.`);
+          
+          // Forzar la descarga de las imágenes en segundo plano para que el Service Worker las guarde en caché offline
+          const imageUrls = allProducts.map((p: any) => p.image_url).filter(Boolean);
+          for (const url of imageUrls) {
+             fetch(url, { mode: 'no-cors' }).catch(() => {});
+          }
         } else {
           console.log(`No hay productos disponibles para la app. Catálogo local vaciado.`);
         }
