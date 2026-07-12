@@ -269,6 +269,18 @@ export const useSync = () => {
       setIsDownloading(false);
     }
   };
+  const base64ToFile = (base64String: string, filename: string): File => {
+    const arr = base64String.split(',');
+    const mimeMatch = arr[0].match(/:(.*?);/);
+    const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const bstr = atob(arr[1] || base64String); // Fallback por si no tiene header
+    let n = bstr.length;
+    const u8arr = new Uint8Array(n);
+    while (n--) {
+      u8arr[n] = bstr.charCodeAt(n);
+    }
+    return new File([u8arr], filename, { type: mime });
+  };
 
   // Upstream: Subir datos offline al servidor
   const triggerSync = async () => {
@@ -285,7 +297,37 @@ export const useSync = () => {
         try {
           const cleanDni = c.dni.replace(/\D/g, ''); // Remover cualquier caracter no numérico
           
-          const payload = {
+          // Subir imágenes si existen
+          const uploadedMediaIds: string[] = [];
+          if (c.document_images && c.document_images.length > 0) {
+            for (let i = 0; i < c.document_images.length; i++) {
+              const base64Str = c.document_images[i];
+              // Evitar intentar subir si ya es un ID de Payload
+              if (!base64Str.startsWith('data:image')) {
+                uploadedMediaIds.push(base64Str);
+                continue;
+              }
+              
+              try {
+                const file = base64ToFile(base64Str, `doc_${cleanDni}_${i}.jpg`);
+                const formData = new FormData();
+                formData.append('file', file);
+                formData.append('alt', `Documento Cliente ${cleanDni}`);
+                
+                const mediaRes = await apiClient.post('/media', formData, {
+                  headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                
+                if (mediaRes.status === 201) {
+                  uploadedMediaIds.push(mediaRes.data.doc.id);
+                }
+              } catch (mediaErr) {
+                console.error(`Error subiendo imagen ${i} de documento:`, mediaErr);
+              }
+            }
+          }
+          
+          const payload: any = {
             name: c.name,
             dni: cleanDni,
             dniType: c.dniType || 'V',
@@ -293,6 +335,17 @@ export const useSync = () => {
             phone: c.phone || '0000000000',
             password: 'temporal_password',
           };
+
+          if (c.gps_location) {
+            payload.gps_location = {
+              lat: Number(c.gps_location.lat),
+              lng: Number(c.gps_location.lng)
+            };
+          }
+          
+          if (uploadedMediaIds.length > 0) {
+            payload.document_images = uploadedMediaIds.map(id => ({ image: id }));
+          }
 
           let res;
           if (typeof c.id === 'string') {
