@@ -221,12 +221,14 @@ export const useSync = () => {
       // 1. Subir Clientes
       for (const c of pendingCustomers) {
         try {
+          const cleanDni = c.dni.replace(/\D/g, ''); // Remover cualquier caracter no numérico
+          
           const payload = {
             name: c.name,
-            dni: c.dni,
+            dni: cleanDni,
             dniType: c.dniType || 'V',
             email: c.email || `${Date.now()}@temp.com`,
-            phone: c.phone,
+            phone: c.phone || '0000000000',
             password: 'temporal_password',
           };
 
@@ -252,8 +254,12 @@ export const useSync = () => {
               await db.orders.update(Number(order.id!), { customer_id: backendId });
             }
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error('Error subiendo cliente:', e);
+          const errorMsg = e.response?.data?.errors 
+            ? JSON.stringify(e.response.data.errors) 
+            : (e.response?.data?.message || e.message);
+          alert(`Error al subir el cliente ${c.name}: ${errorMsg}`);
         }
       }
 
