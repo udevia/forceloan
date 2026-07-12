@@ -149,53 +149,14 @@ export const useSync = () => {
         console.error('Error bajando tasa de cambio:', err);
       }
 
-      // 4. Descargar historial de pedidos (Downstream)
-      try {
-        const userStr = localStorage.getItem('payload-user');
-        const vendorId = userStr ? JSON.parse(userStr).id : null;
-        
-        if (vendorId) {
-          // Buscamos los pedidos creados por este vendedor (últimos 100)
-          const ordersRes = await apiClient.get(`/ordenes?limit=100&sort=-createdAt&where[createdBy.value][equals]=${vendorId}`);
-          if (ordersRes.status === 200) {
-            const downloadedOrders = ordersRes.data.docs.map((o: any) => ({
-              id: o.id,
-              customer_id: typeof o.user === 'object' ? o.user.id : o.user,
-              items: Array.isArray(o.products) ? o.products.map((p: any) => ({
-                product_id: typeof p.product === 'object' ? p.product.id : p.product,
-                name: typeof p.product === 'object' ? (p.product.title || 'Producto') : 'Producto',
-                quantity: Number(p.quantity),
-                price: Number(p.price)
-              })) : [],
-              total: Number(o.total || 0),
-              totalBs: Number(o.totalBs || 0),
-              exchangeRate: Number(o.exchangeRate || 1),
-              is_credit: Boolean(o.isCredit),
-              sync_status: 'synced',
-              created_at: new Date(o.createdAt).getTime()
-            }));
-
-            // Mantener solo los pedidos 'pending' que no se hayan subido aún
-            const pendingOrders = await db.orders.where('sync_status').equals('pending').toArray();
-            
-            // Reemplazar historial asegurando que no sobreescribimos los pendientes locales
-            await db.orders.clear();
-            await db.orders.bulkAdd([...downloadedOrders, ...pendingOrders]);
-            console.log(`${downloadedOrders.length} pedidos descargados del historial.`);
-          }
-        }
-      } catch (err) {
-        console.error('Error bajando historial de pedidos:', err);
-      }
-
-      // 5. Descargar productos disponibles para la app
+      // 4. Descargar productos disponibles para la app
       try {
         let hasNextPage = true;
         let page = 1;
         let allProducts: any[] = [];
 
         while (hasNextPage) {
-          const productsRes = await apiClient.get(`/productos?where[availableForApp][equals]=true&limit=1000&page=${page}`);
+          const productsRes = await apiClient.get(`/productos?where[inventoryStatus][equals]=active&limit=1000&page=${page}`);
           if (productsRes.status === 200) {
             const products = productsRes.data.docs.map((p: any) => ({
               id: p.id,
@@ -256,12 +217,6 @@ export const useSync = () => {
 
     try {
       const pendingCustomers = await db.customers.where('sync_status').equals('pending').toArray();
-      const pendingOrders = await db.orders.where('sync_status').equals('pending').toArray();
-
-      if (pendingCustomers.length === 0 && pendingOrders.length === 0) {
-        setIsSyncing(false);
-        return;
-      }
 
       // 1. Subir Clientes
       for (const c of pendingCustomers) {
@@ -285,10 +240,17 @@ export const useSync = () => {
           }
           
           if (res.status === 201 || res.status === 200) {
-            await db.customers.update(c.id!, { 
-              id: res.data.doc.id, // Si era nuevo, se actualiza al ID string
-              sync_status: 'synced' 
-            });
+            const backendId = res.data.doc.id;
+            
+            // Dexie no permite cambiar la clave primaria directamente, así que borramos y recreamos
+            await db.customers.delete(c.id!);
+            await db.customers.add({ ...c, id: backendId, sync_status: 'synced' });
+            
+            // Actualizar todos los pedidos locales que hacían referencia al ID numérico temporal
+            const ordersToUpdate = await db.orders.where('customer_id').equals(c.id!).toArray();
+            for (const order of ordersToUpdate) {
+              await db.orders.update(order.id!, { customer_id: backendId });
+            }
           }
         } catch (e) {
           console.error('Error subiendo cliente:', e);
@@ -296,6 +258,8 @@ export const useSync = () => {
       }
 
       // 2. Subir Pedidos
+      // Consultamos los pedidos pendientes DESPUÉS de subir clientes para tener los customer_id actualizados
+      const pendingOrders = await db.orders.where('sync_status').equals('pending').toArray();
       const activeExchange = await db.exchange.toArray();
       const exchangeId = activeExchange.length > 0 ? activeExchange[0].id : undefined;
 
@@ -332,7 +296,7 @@ export const useSync = () => {
               updatedBankInfo.push({
                 transaction: bi.transaction,
                 transmitter: bi.transmitter,
-                amount: bi.amount,
+                amount: Number(bi.amount),
                 paymentGateway: bi.paymentGateway,
                 ...(receiptId && { receipt: receiptId })
               });
@@ -340,24 +304,32 @@ export const useSync = () => {
             bankInfoToUpload = updatedBankInfo;
           }
 
-          const res = await apiClient.post('/ordenes', {
-            user: o.customer_id, // ID del cliente
-            products: o.items.map(i => ({ product: i.product_id, quantity: i.quantity, price: i.price })),
-            total: o.total,
-            totalBs: o.totalBs,
+          const orderPayload = {
+            user: o.customer_id, // Ahora es un ID válido del backend
+            products: o.items.map(i => ({ 
+              product: i.product_id, 
+              quantity: String(i.quantity), 
+              price: String(i.price) 
+            })),
+            total: Number(o.total),
+            totalBs: Number(o.totalBs),
             exchange: exchangeId,
-            exchangeRate: o.exchangeRate,
-            isCredit: o.is_credit,
+            exchangeRate: Number(o.exchangeRate),
+            isCredit: Boolean(o.is_credit),
             bankInfo: bankInfoToUpload,
             paymentCash: o.payment_cash || [],
-            status: 'pending', // Payload status Orders
-          });
+          };
+
+          const res = await apiClient.post('/ordenes', orderPayload);
           
           if (res.status === 201 || res.status === 200) {
             await db.orders.update(Number(o.id), { sync_status: 'synced' });
           }
-        } catch (e) {
+        } catch (e: any) {
           console.error('Error subiendo pedido:', e);
+          if (e.response && e.response.data) {
+             console.error('Detalles del backend:', e.response.data);
+          }
         }
       }
       
