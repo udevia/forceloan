@@ -6,7 +6,7 @@ import { useCartStore } from '../store/cartStore';
 
 export const Catalog = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const { addItem, items } = useCartStore();
+  const { addItem, removeItem, updateQuantity, items } = useCartStore();
 
   const products = useLiveQuery(
     () => {
@@ -42,7 +42,7 @@ export const Catalog = () => {
       </div>
 
       {/* Grid de Productos */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
         {!products && <p className="text-gray-500 text-center py-4">Cargando catálogo...</p>}
         {products && products.length === 0 && (
           <div className="text-center py-8 text-gray-500 bg-white rounded-lg border border-gray-200 shadow-sm col-span-full">
@@ -73,21 +73,36 @@ export const Catalog = () => {
                   <p className="text-xs text-gray-500 mt-1">SKU: {p.sku || 'N/A'} • Stock: {p.stock}</p>
                 </div>
                 
-                <div className="flex justify-between items-end mt-4">
-                  <span className="font-extrabold text-blue-600 text-lg">${p.price.toFixed(2)}</span>
+                <div className="flex justify-between items-center mt-3">
+                  <span className="font-extrabold text-blue-600 text-base sm:text-lg">${p.price.toFixed(2)}</span>
                   
-                  <button 
-                    onClick={() => addItem({ product_id: p.id!, name: p.name, price: p.price, quantity: 1, stock: p.stock })}
-                    className="bg-indigo-600 text-white hover:bg-indigo-700 p-2 rounded-full transition-colors relative shadow-sm"
-                    title="Añadir al carrito"
-                  >
-                    <ShoppingCart className="w-4 h-4" />
-                    {inCart > 0 && (
-                      <span className="absolute -top-2 -right-2 bg-red-500 text-white text-[10px] font-bold w-5 h-5 rounded-full flex items-center justify-center shadow">
-                        {inCart}
-                      </span>
-                    )}
-                  </button>
+                  {inCart > 0 ? (
+                    <div className="flex items-center space-x-1 bg-indigo-50 rounded-full border border-indigo-100 p-1">
+                      <button 
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); inCart === 1 ? removeItem(p.id!) : updateQuantity(p.id!, inCart - 1); }}
+                        className="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center bg-white text-indigo-600 rounded-full hover:bg-indigo-100 shadow-sm transition-colors"
+                      >
+                        -
+                      </button>
+                      <span className="font-bold text-xs sm:text-sm text-indigo-900 w-4 sm:w-5 text-center">{inCart}</span>
+                      <button 
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); updateQuantity(p.id!, inCart + 1); }}
+                        className="w-6 h-6 sm:w-7 sm:h-7 flex items-center justify-center bg-indigo-600 text-white rounded-full hover:bg-indigo-700 shadow-sm transition-colors disabled:opacity-50"
+                        disabled={inCart >= p.stock}
+                      >
+                        +
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); addItem({ product_id: p.id!, name: p.name, price: p.price, quantity: 1, stock: p.stock }); }}
+                      className="bg-indigo-600 text-white hover:bg-indigo-700 p-2 rounded-full transition-colors relative shadow-sm disabled:opacity-50"
+                      title="Añadir al carrito"
+                      disabled={p.stock <= 0}
+                    >
+                      <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />
+                    </button>
+                  )}
                 </div>
               </div>
             </article>
