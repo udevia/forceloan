@@ -154,9 +154,9 @@ export const useSync = () => {
         let hasNextPage = true;
         let page = 1;
         let allProducts: any[] = [];
-
+        
         while (hasNextPage) {
-          const productsRes = await apiClient.get(`/productos?where[inventoryStatus][equals]=active&limit=1000&page=${page}`);
+          const productsRes = await apiClient.get(`/productos?where[availableForApp][equals]=true&where[inventoryStatus][equals]=active&limit=1000&page=${page}`);
           if (productsRes.status === 200) {
             const products = productsRes.data.docs.map((p: any) => ({
               id: p.id,
@@ -263,6 +263,19 @@ export const useSync = () => {
       const activeExchange = await db.exchange.toArray();
       const exchangeId = activeExchange.length > 0 ? activeExchange[0].id : undefined;
 
+      // Buscar el ID del estatus "Nuevo"
+      let newStatusId = undefined;
+      try {
+        const statusRes = await apiClient.get('/status-orders?limit=100');
+        if (statusRes.status === 200 && statusRes.data.docs) {
+          const statuses = statusRes.data.docs;
+          const target = statuses.find((s: any) => s.name?.toLowerCase().includes('nuevo') || s.name?.toLowerCase().includes('nueva') || s.name?.toLowerCase().includes('pendiente'));
+          if (target) newStatusId = target.id;
+        }
+      } catch (err) {
+        console.error('No se pudo cargar la lista de estados:', err);
+      }
+
       for (const o of pendingOrders) {
         try {
           // Procesar recibos si hay pagos bancarios
@@ -304,7 +317,7 @@ export const useSync = () => {
             bankInfoToUpload = updatedBankInfo;
           }
 
-          const orderPayload = {
+          const orderPayload: any = {
             user: o.customer_id, // Ahora es un ID válido del backend
             products: o.items.map(i => ({ 
               product: [i.product_id], // Payload hasMany: true requiere un array de IDs
@@ -319,6 +332,10 @@ export const useSync = () => {
             bankInfo: bankInfoToUpload,
             paymentCash: o.payment_cash || [],
           };
+
+          if (newStatusId) {
+            orderPayload.status = newStatusId;
+          }
 
           const res = await apiClient.post('/ordenes', orderPayload);
           
