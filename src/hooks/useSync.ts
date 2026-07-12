@@ -360,7 +360,35 @@ export const useSync = () => {
         }
       }
       
-      console.log('Sincronización Upstream finalizada.');
+      console.log('Sincronización Upstream finalizada. Realizando copia de seguridad en la nube...');
+      try {
+        const userStr = localStorage.getItem('payload-user');
+        if (userStr) {
+          const userObj = JSON.parse(userStr);
+          if (userObj && userObj.id) {
+            const allCustomers = await db.customers.toArray();
+            const allOrders = await db.orders.toArray();
+            
+            const backupPayload = {
+              vendedor: userObj.id,
+              customersData: allCustomers,
+              ordersData: allOrders
+            };
+            
+            // Buscar si ya existe un respaldo
+            const backupRes = await apiClient.get(`/seller-backups?where[vendedor][equals]=${userObj.id}`);
+            if (backupRes.status === 200 && backupRes.data.docs && backupRes.data.docs.length > 0) {
+              const backupId = backupRes.data.docs[0].id;
+              await apiClient.patch(`/seller-backups/${backupId}`, backupPayload);
+            } else {
+              await apiClient.post('/seller-backups', backupPayload);
+            }
+            console.log('Respaldo en la nube completado exitosamente.');
+          }
+        }
+      } catch (backupErr) {
+        console.error('Error al realizar el respaldo en la nube:', backupErr);
+      }
     } catch (error) {
       console.error('Error general durante la sincronización:', error);
     } finally {

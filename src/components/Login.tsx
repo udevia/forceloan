@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
 import { Lock, User, Loader2 } from 'lucide-react';
+import { db } from '../db/db';
 
 export const Login = () => {
   const [email, setEmail] = useState('');
@@ -26,6 +27,29 @@ export const Login = () => {
       // Guardar localmente
       localStorage.setItem('payload-token', token);
       localStorage.setItem('payload-user', JSON.stringify(user));
+      
+      // Intentar restaurar copia de seguridad de la nube (historial de Dexie)
+      try {
+        console.log('Buscando copia de seguridad en la nube...');
+        const backupRes = await apiClient.get(`/seller-backups?where[vendedor][equals]=${user.id}`);
+        if (backupRes.status === 200 && backupRes.data.docs && backupRes.data.docs.length > 0) {
+           const backup = backupRes.data.docs[0];
+           
+           if (backup.customersData && backup.customersData.length > 0) {
+             await db.customers.clear();
+             await db.customers.bulkPut(backup.customersData);
+             console.log(`Restaurados ${backup.customersData.length} clientes locales.`);
+           }
+           
+           if (backup.ordersData && backup.ordersData.length > 0) {
+             await db.orders.clear();
+             await db.orders.bulkPut(backup.ordersData);
+             console.log(`Restaurados ${backup.ordersData.length} pedidos locales.`);
+           }
+        }
+      } catch (backupErr) {
+        console.error('Error al intentar restaurar copia de seguridad:', backupErr);
+      }
 
       navigate('/'); // Redirigir al inicio
     } catch (err: any) {
