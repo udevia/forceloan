@@ -24,7 +24,9 @@ export const generateOrderPDF = async (order: Order, customer?: Customer): Promi
   
   doc.text(`Nº Pedido: ${orderId}`, 14, 45);
   doc.text(`Fecha: ${dateStr}`, 14, 52);
-  doc.text(`Tipo: ${order.is_credit ? 'Crédito' : 'Contado'}`, 14, 59);
+  
+  const tipoCondicion = order.is_credit ? 'Realizar pago al llegar despacho' : 'Contado';
+  doc.text(`Condición: ${tipoCondicion}`, 14, 59);
 
   if (customer) {
     doc.text(`Cliente: ${customer.name}`, 120, 45);
@@ -63,11 +65,25 @@ export const generateOrderPDF = async (order: Order, customer?: Customer): Promi
     doc.text(`Total Bs (Ref): Bs ${order.totalBs.toFixed(2)}`, 14, finalY + 22);
   }
 
+  // Notas finales
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'italic');
+  doc.setTextColor(120, 120, 120);
+  
+  const nota1 = 'Pagos en Bs calculados a la tasa Dólar BCV del día del despacho.';
+  const nota2 = 'Nota administrativa: Una vez llega el despacho a la puerta del cliente, este debe realizar el pago para poder recibir la mercancía. Sin pago validado, el despachador no procederá a la entrega. Agradecemos su comprensión.';
+
+  doc.text(nota1, 14, finalY + 35);
+  
+  // Dividir texto largo en varias líneas para que no se corte
+  const splitNota2 = doc.splitTextToSize(nota2, 180);
+  doc.text(splitNota2, 14, finalY + 42);
+
   // Pie de página
   doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(150, 150, 150);
-  doc.text('¡Gracias por su compra!', 105, finalY + 40, { align: 'center' });
+  doc.text('¡Gracias por su compra!', 105, finalY + 65, { align: 'center' });
 
   // Generar Blob y File
   const pdfBlob = doc.output('blob');

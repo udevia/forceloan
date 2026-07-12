@@ -71,20 +71,7 @@ export const Orders = () => {
       const orderId = order.id || order.backend_id || 'PENDIENTE';
       const textMessage = `Hola ${customer?.name || ''}, aquí tienes el resumen de tu pedido N° ${orderId} por $${order.total.toFixed(2)}.`;
       
-      // Intentar usar Web Share API primero (funciona en móviles y adjunta el PDF)
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        await navigator.share({
-          title: `Pedido ${orderId}`,
-          text: textMessage,
-          files: [file]
-        });
-        return;
-      }
-      
-      // Fallback para PC / navegadores viejos: descargar PDF y abrir WhatsApp Web
-      alert('Tu dispositivo no soporta adjuntar archivos directamente a WhatsApp. El PDF se descargará y se abrirá WhatsApp para que lo envíes manualmente.');
-      
-      // Descargar archivo
+      // Opción 2: Descargar archivo y abrir chat directo (Evita tener que guardar el contacto)
       const url = URL.createObjectURL(file);
       const a = document.createElement('a');
       a.href = url;
@@ -94,12 +81,15 @@ export const Orders = () => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
-      // Abrir WhatsApp Web
-      const waUrl = `https://wa.me/${phoneText}?text=${encodeURIComponent(textMessage)}`;
-      window.open(waUrl, '_blank');
+      // Esperar un instante para que el navegador inicie la descarga antes de cambiar de app
+      setTimeout(() => {
+        const waUrl = `https://wa.me/${phoneText}?text=${encodeURIComponent(textMessage)}`;
+        window.open(waUrl, '_blank');
+      }, 500);
       
     } catch (err) {
-      console.error('Error compartiendo PDF:', err);
+      console.error('Error generando/compartiendo PDF:', err);
+      alert('Hubo un error al generar el recibo.');
     }
   };
 
