@@ -249,7 +249,7 @@ export const useSync = () => {
             // Actualizar todos los pedidos locales que hacían referencia al ID numérico temporal
             const ordersToUpdate = await db.orders.where('customer_id').equals(c.id!).toArray();
             for (const order of ordersToUpdate) {
-              await db.orders.update(order.id!, { customer_id: backendId });
+              await db.orders.update(Number(order.id!), { customer_id: backendId });
             }
           }
         } catch (e) {
