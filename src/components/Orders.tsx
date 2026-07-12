@@ -73,7 +73,7 @@ export const Orders = () => {
       let itemsText = '';
       order.items.forEach((item: any) => {
         const subtotal = item.price * item.quantity;
-        itemsText += `▪️ ${item.quantity}x ${item.product_name} - *$${subtotal.toFixed(2)}*\n`;
+        itemsText += `▪️ ${item.quantity}x ${item.name} - *$${subtotal.toFixed(2)}*\n`;
       });
 
       // Construir el mensaje completo con formato WhatsApp (*negrita*, _cursiva_)
