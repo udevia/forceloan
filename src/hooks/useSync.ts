@@ -95,13 +95,17 @@ export const useSync = () => {
             return c;
           });
 
-          await db.customers.clear();
-          
           const pendingIds = new Set(offlineCustomers.map(c => c.id));
           const finalCustomers = mergedCustomers.filter(c => !pendingIds.has(c.id));
+          
+          // Eliminar cualquier posible duplicado por ID que venga de la paginación del API
+          const uniqueFinalCustomersMap = new Map();
+          finalCustomers.forEach(c => uniqueFinalCustomersMap.set(c.id, c));
+          const deduplicatedFinal = Array.from(uniqueFinalCustomersMap.values());
 
-          await db.customers.bulkAdd([...finalCustomers, ...offlineCustomers]);
-          console.log(`${allValidCustomers.length} clientes descargados.`);
+          await db.customers.clear();
+          await db.customers.bulkAdd([...deduplicatedFinal, ...offlineCustomers]);
+          console.log(`${deduplicatedFinal.length} clientes descargados y guardados exitosamente.`);
         }
       } catch (err) {
         console.error('Error bajando clientes:', err);
