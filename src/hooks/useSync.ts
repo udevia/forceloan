@@ -68,6 +68,8 @@ export const useSync = () => {
                   email: u.email,
                   phone: u.phone,
                   address: u.address || '',
+                  gps_location: u.gps_location,
+                  document_images: u.document_images?.map((d: any) => d.image?.id || d.image || d),
                   createdBy: createdById,
                   sync_status: 'synced',
                   created_at: Date.now()
@@ -106,8 +108,11 @@ export const useSync = () => {
           finalCustomers.forEach(c => uniqueFinalCustomersMap.set(c.id, c));
           const deduplicatedFinal = Array.from(uniqueFinalCustomersMap.values());
 
-          await db.customers.clear();
-          await db.customers.bulkAdd([...deduplicatedFinal, ...offlineCustomers]);
+          // Evitar que la DB se quede en cero si bulkAdd falla, usando transacción
+          await db.transaction('rw', db.customers, async () => {
+            await db.customers.clear();
+            await db.customers.bulkPut([...deduplicatedFinal, ...offlineCustomers]);
+          });
           console.log(`${deduplicatedFinal.length} clientes descargados y guardados exitosamente.`);
         }
       } catch (err) {
@@ -348,9 +353,16 @@ export const useSync = () => {
           }
 
           let res;
-          if (typeof c.id === 'string') {
-            // Editando cliente ya existente en el backend
-            res = await apiClient.patch(`/users/${c.id}`, payload);
+          if (c.id && !String(c.id).startsWith('local_')) {
+            try {
+              res = await apiClient.patch(`/users/${c.id}`, payload);
+            } catch (e: any) {
+              if (e.response?.status === 404) {
+                res = await apiClient.post('/users', payload);
+              } else {
+                throw e;
+              }
+            }
           } else {
             // Cliente completamente nuevo local
             res = await apiClient.post('/users', payload);
