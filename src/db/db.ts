@@ -26,6 +26,7 @@ export interface Customer {
     lng: number;
   };
   document_images?: string[]; // Array de Base64 para offline
+  isTaxWithholdingAgent?: boolean;
   createdBy?: string; // ID del vendedor o usuario que lo creó
   sync_status: 'synced' | 'pending' | 'error';
   created_at: number;
@@ -36,6 +37,7 @@ export interface Product {
   name: string;
   sku: string;
   price: number;
+  taxRate?: number;
   stock: number;
   category?: string;
   image_url?: string;
@@ -56,6 +58,8 @@ export interface Order {
   status_color?: string; // Color del estado
   customer_id: string;
   items: OrderItem[];
+  subtotal?: number;
+  taxTotal?: number;
   total: number;
   totalBs?: number;
   exchangeRate?: number;

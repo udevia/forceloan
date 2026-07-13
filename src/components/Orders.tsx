@@ -7,7 +7,7 @@ import { Trash2, ShoppingBag, Plus, Minus, CheckCircle, Edit, X, Share2 } from '
 import { CheckoutModal } from './CheckoutModal';
 
 export const Orders = () => {
-  const { items, removeItem, updateQuantity, clearCart, getTotal, selectedCustomerId, setCustomer } = useCartStore();
+  const { items, removeItem, updateQuantity, clearCart, getTotal, getSubtotal, getTaxTotal, selectedCustomerId, setCustomer } = useCartStore();
   
   const [customerSearch, setCustomerSearch] = useState('');
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -16,7 +16,13 @@ export const Orders = () => {
   // Listar clientes para el selector
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
   // Listar órdenes previas
-  const localOrders = useLiveQuery(() => db.orders.toArray()) || [];
+  const localOrders = useLiveQuery(() => db.orders.orderBy('created_at').reverse().toArray()) || [];
+  const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
+
+  const subtotal = getSubtotal();
+  const taxTotal = getTaxTotal();
+  const retention = selectedCustomer?.isTaxWithholdingAgent ? taxTotal * 0.75 : 0;
+  const finalTotal = subtotal + taxTotal - retention;
 
   const handleCheckout = () => {
     if (items.length === 0) return alert('El carrito está vacío');
@@ -29,7 +35,9 @@ export const Orders = () => {
       await db.orders.add({
         customer_id: selectedCustomerId,
         items: items as OrderItem[],
-        total: getTotal(),
+        subtotal: subtotal,
+        taxTotal: taxTotal,
+        total: finalTotal,
         sync_status: 'pending',
         created_at: Date.now(),
         ...orderData
@@ -73,9 +81,16 @@ export const Orders = () => {
       // Construir la lista de productos
       let itemsText = '';
       order.items.forEach((item: any) => {
-        const subtotal = item.price * item.quantity;
-        itemsText += `▪️ ${item.quantity}x ${item.name} - *$${subtotal.toFixed(2)}*\n`;
+        const subtotalItem = item.price * item.quantity;
+        const itemName = item.name || 'Producto';
+        itemsText += `▪️ ${item.quantity}x ${itemName} - *$${subtotalItem.toFixed(2)}*\n`;
       });
+
+      const subtotalMsg = order.subtotal ? `\n\n*Subtotal: $${order.subtotal.toFixed(2)}*\n` : '\n\n';
+      const ivaMsg = order.taxTotal ? `*IVA: $${order.taxTotal.toFixed(2)}*\n` : '';
+      
+      const retention = customer?.isTaxWithholdingAgent && order.taxTotal ? order.taxTotal * 0.75 : 0;
+      const retentionMsg = retention > 0 ? `*Retención (75%): -$${retention.toFixed(2)}*\n` : '';
 
       // Construir el mensaje completo con formato WhatsApp (*negrita*, _cursiva_)
       const textMessage = `*🏢 INVERSIONES LOAN*\n` +
@@ -84,7 +99,10 @@ export const Orders = () => {
                           `📅 *Fecha:* ${dateStr}\n` +
                           `💳 *Condición:* ${tipoCondicion}\n\n` +
                           `📦 *DETALLE DE PRODUCTOS:*\n` +
-                          `${itemsText}\n` +
+                          `${itemsText}` +
+                          `${subtotalMsg}` +
+                          `${ivaMsg}` +
+                          `${retentionMsg}` +
                           `💰 *TOTAL A PAGAR: $${order.total.toFixed(2)}*\n\n` +
                           `_Pagos en Bs calculados a la tasa Dólar BCV del día del despacho._\n\n` +
                           `⚠️ *Nota administrativa:* Una vez llega el despacho a la puerta, el cliente debe realizar el pago para recibir la mercancía. Sin pago validado, no se procederá a la entrega.\n\n` +
@@ -210,10 +228,26 @@ export const Orders = () => {
               </div>
 
               {/* Total y Checkout */}
-              <div className="pt-4 border-t border-gray-100 flex justify-between items-center">
-                <div>
-                  <p className="text-sm text-gray-500">Total a Pagar</p>
-                  <p className="text-2xl font-extrabold text-gray-900">${getTotal().toFixed(2)}</p>
+              <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-4 sm:space-y-0">
+                <div className="w-full sm:w-auto">
+                  <div className="flex justify-between sm:block text-sm text-gray-500 mb-1">
+                    <span>Subtotal:</span>
+                    <span className="sm:ml-2 font-medium">${subtotal.toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between sm:block text-sm text-gray-500 mb-1">
+                    <span>IVA:</span>
+                    <span className="sm:ml-2 font-medium">${taxTotal.toFixed(2)}</span>
+                  </div>
+                  {retention > 0 && (
+                    <div className="flex justify-between sm:block text-sm text-red-500 mb-1">
+                      <span>Retención (75%):</span>
+                      <span className="sm:ml-2 font-medium">-${retention.toFixed(2)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between sm:block">
+                    <span className="text-gray-900 font-bold">Total a Pagar:</span>
+                    <span className="text-2xl font-extrabold text-gray-900 sm:ml-2">${finalTotal.toFixed(2)}</span>
+                  </div>
                 </div>
                 
                 <button 
@@ -317,7 +351,7 @@ export const Orders = () => {
       {/* Modal de Checkout */}
       {isCheckoutOpen && (
         <CheckoutModal 
-          totalUsd={getTotal()} 
+          totalUsd={finalTotal} 
           onClose={() => setIsCheckoutOpen(false)} 
           onSubmit={handleCheckoutSubmit} 
         />

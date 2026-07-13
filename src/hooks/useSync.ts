@@ -81,6 +81,7 @@ export const useSync = () => {
                   address: u.address || '',
                   gps_location: u.gps_location,
                   document_images: u.document_images?.map((d: any) => d.image?.id || d.image || d),
+                  isTaxWithholdingAgent: u.isTaxWithholdingAgent,
                   createdBy: createdById,
                   sync_status: 'synced',
                   created_at: Date.now()
@@ -172,13 +173,14 @@ export const useSync = () => {
         let allProducts: any[] = [];
         
         while (hasNextPage) {
-          const productsRes = await apiClient.get(`/productos?where[and][0][availableForApp][equals]=true&where[and][1][inventoryStatus][equals]=active&limit=1000&page=${page}`);
+          const productsRes = await apiClient.get(`/productos?where[and][0][availableForApp][equals]=true&where[and][1][inventoryStatus][equals]=active&limit=1000&page=${page}&depth=1`);
           if (productsRes.status === 200) {
             const products = productsRes.data.docs.map((p: any) => ({
               id: p.id,
               name: p.title || p.name,
               sku: p.sku || p.id,
               price: p.price || 0,
+              taxRate: p.taxCategory?.rate || p.tax || 16,
               stock: p.stockMain || 0,
               image_url: p.images?.[0]?.image?.url ? 
                 (p.images[0].image.url.startsWith('http') ? p.images[0].image.url : `https://galpon.loanmayorista.site${p.images[0].image.url}`) 
@@ -261,6 +263,8 @@ export const useSync = () => {
                         price: Number(p.price)
                       };
                     }) || [],
+                    subtotal: Number(bOrder.total) - Number(bOrder.taxTotal || 0),
+                    taxTotal: Number(bOrder.taxTotal || 0),
                     total: Number(bOrder.total),
                     totalBs: Number(bOrder.totalBs || 0),
                     exchangeRate: Number(bOrder.exchangeRate || 0),
@@ -353,6 +357,7 @@ export const useSync = () => {
             email: c.email || `${Date.now()}@temp.com`,
             phone: c.phone || '0000000000',
             password: 'temporal_password',
+            isTaxWithholdingAgent: Boolean(c.isTaxWithholdingAgent),
           };
 
           if (c.gps_location) {
@@ -472,6 +477,7 @@ export const useSync = () => {
               price: String(i.price) 
             })),
             total: String(o.total),
+            taxTotal: o.taxTotal ? String(o.taxTotal) : undefined,
             totalBs: String(o.totalBs),
             exchange: exchangeId,
             exchangeRate: Number(o.exchangeRate),

@@ -9,6 +9,7 @@ export const CustomerForm = ({ initialData, onCancel }: { initialData?: any, onC
   const [email, setEmail] = useState(initialData?.email || '');
   const [phone, setPhone] = useState(initialData?.phone || '');
   const [address, setAddress] = useState(initialData?.address || '');
+  const [isTaxWithholdingAgent, setIsTaxWithholdingAgent] = useState(initialData?.isTaxWithholdingAgent || false);
   
   const [gpsLocation, setGpsLocation] = useState<{lat: number, lng: number} | null>(initialData?.gps_location || null);
   const [loadingGps, setLoadingGps] = useState(false);
@@ -66,6 +67,7 @@ export const CustomerForm = ({ initialData, onCancel }: { initialData?: any, onC
         email,
         phone,
         address,
+        isTaxWithholdingAgent,
         gps_location: gpsLocation || undefined,
         document_images: documentImages.length > 0 ? documentImages : undefined,
         sync_status: 'pending' as const,
@@ -132,6 +134,19 @@ export const CustomerForm = ({ initialData, onCancel }: { initialData?: any, onC
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
           <textarea value={address} onChange={e => setAddress(e.target.value)} className="w-full border border-gray-300 rounded p-2 focus:ring-blue-500 focus:border-blue-500" rows={2}></textarea>
+        </div>
+
+        <div className="flex items-center space-x-2 bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+          <input 
+            type="checkbox" 
+            id="isTaxWithholdingAgent" 
+            checked={isTaxWithholdingAgent} 
+            onChange={e => setIsTaxWithholdingAgent(e.target.checked)} 
+            className="w-4 h-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+          />
+          <label htmlFor="isTaxWithholdingAgent" className="text-sm font-medium text-gray-700">
+            Es Agente de Retención (75% del IVA)
+          </label>
         </div>
 
         {/* Hardware Integrations */}

@@ -99,7 +99,7 @@ export const Catalog = () => {
                     </div>
                   ) : (
                     <button 
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); addItem({ product_id: p.id!, name: p.name, price: p.price, quantity: 1, stock: p.stock }); }}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); addItem({ product_id: p.id!, name: p.name, price: p.price, quantity: 1, stock: p.stock, taxRate: p.taxRate }); }}
                       className={`text-white p-2 rounded-full transition-colors relative shadow-sm disabled:opacity-50 ${p.stock > 0 ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-gray-400 cursor-not-allowed'}`}
                       title={p.stock > 0 ? "Añadir al carrito" : "Agotado"}
                       disabled={p.stock <= 0}

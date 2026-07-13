@@ -7,6 +7,7 @@ export interface CartItem {
   price: number;
   quantity: number;
   stock: number;
+  taxRate?: number;
 }
 
 interface CartState {
@@ -17,6 +18,8 @@ interface CartState {
   updateQuantity: (productId: string, quantity: number) => void;
   setCustomer: (customerId: string) => void;
   clearCart: () => void;
+  getSubtotal: () => number;
+  getTaxTotal: () => number;
   getTotal: () => number;
 }
 
@@ -60,8 +63,20 @@ export const useCartStore = create<CartState>()(
 
       clearCart: () => set({ items: [], selectedCustomerId: null }),
 
-      getTotal: () => {
+      getSubtotal: () => {
         return get().items.reduce((total, item) => total + (item.price * item.quantity), 0);
+      },
+
+      getTaxTotal: () => {
+        return get().items.reduce((total, item) => {
+          const itemTaxRate = item.taxRate || 16;
+          const itemTax = (item.price * item.quantity) * (itemTaxRate / 100);
+          return total + itemTax;
+        }, 0);
+      },
+
+      getTotal: () => {
+        return get().getSubtotal() + get().getTaxTotal();
       }
     }),
     {
