@@ -5,6 +5,7 @@ import { CustomerForm } from './components/CustomerForm';
 import { Login } from './components/Login';
 import { Catalog } from './components/Catalog';
 import { Orders } from './components/Orders';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from './db/db';
 
@@ -18,7 +19,12 @@ const Home = () => <div className="p-4"><h2 className="text-xl font-bold mb-4">R
 
 const Customers = () => {
   const localCustomersCount = useLiveQuery(() => db.customers.count()) || 0;
-  const currentUser = JSON.parse(localStorage.getItem('payload-user') || '{}');
+  let currentUser: any = {};
+  try {
+    currentUser = JSON.parse(localStorage.getItem('payload-user') || '{}');
+  } catch (e) {
+    console.warn('Error parsing payload-user');
+  }
   
   const myCustomers = useLiveQuery(
     () => db.customers.filter(c => c.createdBy === currentUser.id || c.sync_status === 'pending').toArray()
@@ -103,11 +109,11 @@ function App() {
             <Layout />
           </ProtectedRoute>
         }>
-          <Route index element={<Home />} />
-          <Route path="clientes" element={<Customers />} />
-          <Route path="productos" element={<Catalog />} />
-          <Route path="pedidos" element={<Orders />} />
-          <Route path="cloud-sync" element={<CloudSync />} />
+          <Route index element={<ErrorBoundary><Home /></ErrorBoundary>} />
+          <Route path="clientes" element={<ErrorBoundary><Customers /></ErrorBoundary>} />
+          <Route path="productos" element={<ErrorBoundary><Catalog /></ErrorBoundary>} />
+          <Route path="pedidos" element={<ErrorBoundary><Orders /></ErrorBoundary>} />
+          <Route path="cloud-sync" element={<ErrorBoundary><CloudSync /></ErrorBoundary>} />
         </Route>
       </Routes>
     </BrowserRouter>
