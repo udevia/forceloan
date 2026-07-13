@@ -18,9 +18,6 @@ interface CartState {
   updateQuantity: (productId: string, quantity: number) => void;
   setCustomer: (customerId: string) => void;
   clearCart: () => void;
-  getSubtotal: () => number;
-  getTaxTotal: () => number;
-  getTotal: () => number;
 }
 
 export const useCartStore = create<CartState>()(
@@ -61,23 +58,7 @@ export const useCartStore = create<CartState>()(
 
       setCustomer: (customerId) => set({ selectedCustomerId: customerId }),
 
-      clearCart: () => set({ items: [], selectedCustomerId: null }),
-
-      getSubtotal: () => {
-        return get().items.reduce((total, item) => total + (item.price * item.quantity), 0);
-      },
-
-      getTaxTotal: () => {
-        return get().items.reduce((total, item) => {
-          const itemTaxRate = item.taxRate || 16;
-          const itemTax = (item.price * item.quantity) * (itemTaxRate / 100);
-          return total + itemTax;
-        }, 0);
-      },
-
-      getTotal: () => {
-        return get().getSubtotal() + get().getTaxTotal();
-      }
+      clearCart: () => set({ items: [], selectedCustomerId: null })
     }),
     {
       name: 'cart-storage', // Se guarda por defecto en localStorage

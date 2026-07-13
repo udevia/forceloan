@@ -7,7 +7,7 @@ import { Trash2, ShoppingBag, Plus, Minus, CheckCircle, Edit, X, Share2 } from '
 import { CheckoutModal } from './CheckoutModal';
 
 export const Orders = () => {
-  const { items, removeItem, updateQuantity, clearCart, getSubtotal, getTaxTotal, selectedCustomerId, setCustomer } = useCartStore();
+  const { items, removeItem, updateQuantity, clearCart, selectedCustomerId, setCustomer } = useCartStore();
   
   const [customerSearch, setCustomerSearch] = useState('');
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
@@ -19,8 +19,8 @@ export const Orders = () => {
   const localOrders = useLiveQuery(() => db.orders.orderBy('created_at').reverse().toArray()) || [];
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
-  const subtotal = getSubtotal();
-  const taxTotal = getTaxTotal();
+  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const taxTotal = items.reduce((sum, item) => sum + (item.price * item.quantity) * ((item.taxRate || 16) / 100), 0);
   const retention = selectedCustomer?.isTaxWithholdingAgent ? taxTotal * 0.75 : 0;
   const finalTotal = subtotal + taxTotal - retention;
 
