@@ -45,8 +45,19 @@ export const useSync = () => {
         
         const offlineCustomers = await db.customers.where('sync_status').equals('pending').toArray();
 
+        const userStr = localStorage.getItem('payload-user');
+        let sellerId = '';
+        if (userStr) {
+          try {
+            const userObj = JSON.parse(userStr);
+            sellerId = userObj.id;
+          } catch (e) {}
+        }
+        
+        const filterQuery = sellerId ? `&where[createdBy.value][equals]=${sellerId}` : '';
+
         while (hasNextPage) {
-          const usersRes = await apiClient.get(`/users?limit=1000&page=${page}`); 
+          const usersRes = await apiClient.get(`/users?limit=1000&page=${page}${filterQuery}`); 
           if (usersRes.status === 200) {
             const users = usersRes.data.docs;
               const validCustomers = users
@@ -214,7 +225,7 @@ export const useSync = () => {
         
         if (userObj && userObj.id) {
           while (hasNextPage) {
-            const ordersRes = await apiClient.get(`/ordenes?where[createdBy][equals]=${userObj.id}&limit=100&page=${page}`);
+            const ordersRes = await apiClient.get(`/ordenes?where[createdBy.value][equals]=${userObj.id}&limit=100&page=${page}`);
             if (ordersRes.status === 200) {
               allBackendOrders = [...allBackendOrders, ...ordersRes.data.docs];
               hasNextPage = ordersRes.data.hasNextPage;

@@ -60,10 +60,14 @@ export const Catalog = () => {
               {/* Imagen del producto */}
               <div className="relative w-full aspect-square bg-gray-100 flex items-center justify-center overflow-hidden">
                 {p.image_url ? (
-                  <img src={p.image_url} alt={p.name} className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                  <img src={p.image_url} alt={p.name} className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${p.stock <= 0 ? 'opacity-50 grayscale' : ''}`} />
                 ) : (
                   <span className="text-gray-400 text-xs">Sin Imagen</span>
                 )}
+                {/* Badge de Disponibilidad */}
+                <div className={`absolute top-2 left-2 px-2 py-1 text-[10px] font-bold text-white rounded shadow-sm ${p.stock > 0 ? 'bg-green-600' : 'bg-red-600'}`}>
+                  {p.stock > 0 ? `DISP: ${p.stock}` : 'AGOTADO'}
+                </div>
               </div>
               
               {/* Detalles */}
@@ -96,8 +100,8 @@ export const Catalog = () => {
                   ) : (
                     <button 
                       onClick={(e) => { e.preventDefault(); e.stopPropagation(); addItem({ product_id: p.id!, name: p.name, price: p.price, quantity: 1, stock: p.stock }); }}
-                      className="bg-indigo-600 text-white hover:bg-indigo-700 p-2 rounded-full transition-colors relative shadow-sm disabled:opacity-50"
-                      title="Añadir al carrito"
+                      className={`text-white p-2 rounded-full transition-colors relative shadow-sm disabled:opacity-50 ${p.stock > 0 ? 'bg-indigo-600 hover:bg-indigo-700' : 'bg-gray-400 cursor-not-allowed'}`}
+                      title={p.stock > 0 ? "Añadir al carrito" : "Agotado"}
                       disabled={p.stock <= 0}
                     >
                       <ShoppingCart className="w-4 h-4 sm:w-5 sm:h-5" />
