@@ -111,6 +111,14 @@ export class ForceLoanDB extends Dexie {
       paymentMethods: 'id',
       exchange: 'id'
     });
+
+    this.version(4).stores({
+      customers: '++id, name, sync_status',
+      products: 'id, name, sku',
+      orders: '++id, customer_id, sync_status, backend_id, created_at',
+      paymentMethods: 'id',
+      exchange: 'id'
+    });
   }
 }
 
