@@ -78,7 +78,12 @@ export const Catalog = () => {
                 </div>
                 
                 <div className="flex justify-between items-center mt-3">
-                  <span className="font-extrabold text-blue-600 text-base sm:text-lg">${p.price.toFixed(2)}</span>
+                  <div className="flex flex-col">
+                    <span className="font-extrabold text-blue-600 text-base sm:text-lg">
+                      ${(p.price * (1 + (p.taxRate || 16) / 100)).toFixed(2)}
+                    </span>
+                    <span className="text-[10px] text-gray-400 font-medium">Inc. IVA</span>
+                  </div>
                   
                   {inCart > 0 ? (
                     <div className="flex items-center space-x-1 bg-indigo-50 rounded-full border border-indigo-100 p-1">
