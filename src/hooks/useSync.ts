@@ -180,7 +180,7 @@ export const useSync = () => {
               name: p.title || p.name,
               sku: p.sku || p.id,
               price: p.price || 0,
-              taxRate: p.taxCategory?.rate || p.tax || 16,
+              taxRate: typeof p.tax === 'number' ? p.tax : (p.taxCategory?.rate ?? 16),
               stock: p.stockMain || 0,
               image_url: p.images?.[0]?.image?.url ? 
                 (p.images[0].image.url.startsWith('http') ? p.images[0].image.url : `https://galpon.loanmayorista.site${p.images[0].image.url}`) 

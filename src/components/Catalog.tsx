@@ -80,9 +80,11 @@ export const Catalog = () => {
                 <div className="flex justify-between items-center mt-3">
                   <div className="flex flex-col">
                     <span className="font-extrabold text-blue-600 text-base sm:text-lg">
-                      ${(p.price * (1 + (p.taxRate || 16) / 100)).toFixed(2)}
+                      ${(p.price * (1 + (p.taxRate ?? 0) / 100)).toFixed(2)}
                     </span>
-                    <span className="text-[10px] text-gray-400 font-medium">Inc. IVA</span>
+                    <span className="text-[10px] text-gray-400 font-medium">
+                      {(p.taxRate ?? 0) > 0 ? `Inc. IVA ${p.taxRate}%` : 'Exento'}
+                    </span>
                   </div>
                   
                   {inCart > 0 ? (

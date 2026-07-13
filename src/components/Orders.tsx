@@ -25,7 +25,7 @@ export const Orders = () => {
 
   const safeItems = Array.isArray(items) ? items : [];
   const subtotal = safeItems.reduce((sum, item) => sum + ((item?.price || 0) * (item?.quantity || 1)), 0);
-  const taxTotal = safeItems.reduce((sum, item) => sum + ((item?.price || 0) * (item?.quantity || 1)) * ((item?.taxRate ?? 16) / 100), 0);
+  const taxTotal = safeItems.reduce((sum, item) => sum + ((item?.price || 0) * (item?.quantity || 1)) * ((item?.taxRate ?? 0) / 100), 0);
   const retention = selectedCustomer?.isTaxWithholdingAgent ? taxTotal * 0.75 : 0;
   const finalTotal = subtotal + taxTotal - retention;
 
