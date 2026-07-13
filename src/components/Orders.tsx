@@ -7,7 +7,7 @@ import { Trash2, ShoppingBag, Plus, Minus, CheckCircle, Edit, X, Share2 } from '
 import { CheckoutModal } from './CheckoutModal';
 
 export const Orders = () => {
-  const { items, removeItem, updateQuantity, clearCart, getTotal, getSubtotal, getTaxTotal, selectedCustomerId, setCustomer } = useCartStore();
+  const { items, removeItem, updateQuantity, clearCart, getSubtotal, getTaxTotal, selectedCustomerId, setCustomer } = useCartStore();
   
   const [customerSearch, setCustomerSearch] = useState('');
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
