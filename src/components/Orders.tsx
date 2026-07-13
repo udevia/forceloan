@@ -14,13 +14,18 @@ export const Orders = () => {
   const [expandedOrderId, setExpandedOrderId] = useState<number | string | null>(null);
   
   // Listar clientes para el selector
-  const customers = useLiveQuery(() => db.customers.toArray()) || [];
+  const queryCustomers = useLiveQuery(() => db.customers.toArray());
+  const customers = Array.isArray(queryCustomers) ? queryCustomers : [];
+  
   // Listar órdenes previas
-  const localOrders = useLiveQuery(() => db.orders.orderBy('created_at').reverse().toArray()) || [];
+  const queryOrders = useLiveQuery(() => db.orders.orderBy('created_at').reverse().toArray());
+  const localOrders = Array.isArray(queryOrders) ? queryOrders : [];
+  
   const selectedCustomer = customers.find(c => c.id === selectedCustomerId);
 
-  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const taxTotal = items.reduce((sum, item) => sum + (item.price * item.quantity) * ((item.taxRate || 16) / 100), 0);
+  const safeItems = Array.isArray(items) ? items : [];
+  const subtotal = safeItems.reduce((sum, item) => sum + ((item?.price || 0) * (item?.quantity || 1)), 0);
+  const taxTotal = safeItems.reduce((sum, item) => sum + ((item?.price || 0) * (item?.quantity || 1)) * ((item?.taxRate ?? 16) / 100), 0);
   const retention = selectedCustomer?.isTaxWithholdingAgent ? taxTotal * 0.75 : 0;
   const finalTotal = subtotal + taxTotal - retention;
 
@@ -129,33 +134,33 @@ export const Orders = () => {
         </div>
         
         <div className="p-4 space-y-4">
-          {items.length === 0 ? (
+          {safeItems.length === 0 ? (
             <p className="text-center text-gray-500 py-8">No hay productos en el carrito.</p>
           ) : (
             <div className="space-y-4">
               {/* Lista de Items */}
               <ul className="divide-y divide-gray-100">
-                {items.map(item => (
-                  <li key={item.product_id} className="py-3 flex justify-between items-center">
+                {safeItems.map(item => (
+                  <li key={item?.product_id} className="py-3 flex justify-between items-center">
                     <div className="flex-1">
-                      <p className="font-semibold text-gray-800 text-sm">{item.name}</p>
-                      <p className="text-blue-600 font-bold">${item.price.toFixed(2)}</p>
+                      <p className="font-semibold text-gray-800 text-sm">{item?.name || 'Producto'}</p>
+                      <p className="text-blue-600 font-bold">${(item?.price || 0).toFixed(2)}</p>
                     </div>
                     
                     <div className="flex items-center space-x-3">
                       <div className="flex items-center bg-gray-100 rounded-lg">
                         <button 
-                          onClick={() => updateQuantity(item.product_id, Math.max(1, item.quantity - 1))}
+                          onClick={() => updateQuantity(item?.product_id, Math.max(1, (item?.quantity || 1) - 1))}
                           className="p-1 text-gray-600 hover:bg-gray-200 rounded-l-lg transition-colors"
                         ><Minus className="w-4 h-4"/></button>
-                        <span className="w-8 text-center text-sm font-semibold">{item.quantity}</span>
+                        <span className="w-8 text-center text-sm font-semibold">{item?.quantity || 1}</span>
                         <button 
-                          onClick={() => updateQuantity(item.product_id, item.quantity + 1)}
+                          onClick={() => updateQuantity(item?.product_id, (item?.quantity || 1) + 1)}
                           className="p-1 text-gray-600 hover:bg-gray-200 rounded-r-lg transition-colors"
                         ><Plus className="w-4 h-4"/></button>
                       </div>
                       
-                      <button onClick={() => removeItem(item.product_id)} className="text-red-500 p-2 hover:bg-red-50 rounded-full transition-colors">
+                      <button onClick={() => removeItem(item?.product_id)} className="text-red-500 p-2 hover:bg-red-50 rounded-full transition-colors">
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -191,7 +196,14 @@ export const Orders = () => {
                     <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100 shadow-inner bg-gray-50">
                       {(() => {
                         const userStr = localStorage.getItem('payload-user');
-                        const vendorId = userStr ? JSON.parse(userStr).id : null;
+                        let vendorId = null;
+                        if (userStr) {
+                          try {
+                            vendorId = JSON.parse(userStr).id;
+                          } catch (e) {
+                            console.warn("Invalid payload-user in localStorage");
+                          }
+                        }
                         
                         const filteredCustomers = customers.filter(c => {
                           if (customerSearch) {
@@ -272,38 +284,39 @@ export const Orders = () => {
             <p className="text-sm text-gray-500">No hay pedidos locales.</p>
           ) : (
             localOrders.map(order => {
-              const customer = customers.find(c => String(c.id) === String(order.customer_id));
+              const customer = customers.find(c => String(c.id) === String(order?.customer_id));
+              const orderItems = Array.isArray(order?.items) ? order.items : [];
               return (
                 <li key={order.id} className="py-3 flex flex-col sm:flex-row justify-between items-start sm:items-center space-y-2 sm:space-y-0">
                   <div className="flex-1">
                     <p className="font-semibold text-gray-800">{customer?.name || 'Cliente desconocido'}</p>
-                    <p className="text-xs text-gray-500">{new Date(order.created_at).toLocaleString()} • {order.items.length} items</p>
-                    {order.is_credit ? (
+                    <p className="text-xs text-gray-500">{new Date(order?.created_at || Date.now()).toLocaleString()} • {orderItems.length} items</p>
+                    {order?.is_credit ? (
                       <span className="text-[10px] px-2 py-1 bg-purple-100 text-purple-800 rounded-full mt-1 inline-block">Crédito</span>
                     ) : (
                       <span className="text-[10px] px-2 py-1 bg-green-100 text-green-800 rounded-full mt-1 inline-block">Contado</span>
                     )}
                     
                     <button 
-                      onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id!)}
+                      onClick={() => setExpandedOrderId(expandedOrderId === order?.id ? null : order?.id!)}
                       className="text-xs text-blue-600 hover:underline mt-2 ml-2 font-medium"
                     >
-                      {expandedOrderId === order.id ? 'Ocultar detalle' : 'Ver detalle'}
+                      {expandedOrderId === order?.id ? 'Ocultar detalle' : 'Ver detalle'}
                     </button>
                   </div>
                   <div className="text-right flex items-center space-x-3 mt-3 sm:mt-0">
                     <div className="text-right">
-                      <p className="font-bold text-gray-900">${order.total.toFixed(2)}</p>
-                      {order.sync_status === 'pending' ? (
+                      <p className="font-bold text-gray-900">${(Number(order?.total) || 0).toFixed(2)}</p>
+                      {order?.sync_status === 'pending' ? (
                         <span className="text-[10px] px-2 py-1 rounded-full inline-block mt-1 bg-yellow-100 text-yellow-800">
                           Pendiente
                         </span>
                       ) : (
                         <span 
                           className="text-[10px] px-2 py-1 rounded-full inline-block mt-1 font-medium shadow-sm text-white"
-                          style={{ backgroundColor: order.status_color || '#10b981' }}
+                          style={{ backgroundColor: order?.status_color || '#10b981' }}
                         >
-                          {order.status_name || 'Sincronizado'}
+                          {order?.status_name || 'Sincronizado'}
                         </span>
                       )}
                     </div>
@@ -315,12 +328,12 @@ export const Orders = () => {
                       >
                         <Share2 className="w-4 h-4" />
                       </button>
-                      {order.sync_status === 'pending' && (
+                      {order?.sync_status === 'pending' && (
                         <>
                           <button onClick={() => handleEditOrder(order)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-full" title="Editar">
                             <Edit className="w-4 h-4" />
                           </button>
-                          <button onClick={() => handleDeleteOrder(order.id!)} className="p-2 text-red-500 hover:bg-red-50 rounded-full" title="Eliminar">
+                          <button onClick={() => handleDeleteOrder(order?.id!)} className="p-2 text-red-500 hover:bg-red-50 rounded-full" title="Eliminar">
                             <X className="w-4 h-4" />
                           </button>
                         </>
@@ -328,14 +341,14 @@ export const Orders = () => {
                     </div>
                     </div>
                   
-                  {expandedOrderId === order.id && (
+                  {expandedOrderId === order?.id && (
                     <div className="mt-4 pt-3 border-t border-dashed border-gray-200 bg-gray-50 rounded p-3 text-sm">
                       <p className="font-bold text-gray-700 mb-2">Productos:</p>
                       <ul className="space-y-1">
-                        {order.items.map((item: any, idx: number) => (
+                        {orderItems.map((item: any, idx: number) => (
                           <li key={idx} className="flex justify-between text-gray-600">
-                            <span>{item.quantity}x {item.name}</span>
-                            <span className="font-semibold">${(item.price * item.quantity).toFixed(2)}</span>
+                            <span>{item?.quantity || 0}x {item?.name || 'Producto'}</span>
+                            <span className="font-semibold">${((item?.price || 0) * (item?.quantity || 1)).toFixed(2)}</span>
                           </li>
                         ))}
                       </ul>
