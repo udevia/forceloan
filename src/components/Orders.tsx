@@ -11,6 +11,7 @@ export const Orders = () => {
   
   const [customerSearch, setCustomerSearch] = useState('');
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [expandedOrderId, setExpandedOrderId] = useState<number | string | null>(null);
   
   // Listar clientes para el selector
   const customers = useLiveQuery(() => db.customers.toArray()) || [];
@@ -248,8 +249,15 @@ export const Orders = () => {
                     ) : (
                       <span className="text-[10px] px-2 py-1 bg-green-100 text-green-800 rounded-full mt-1 inline-block">Contado</span>
                     )}
+                    
+                    <button 
+                      onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id!)}
+                      className="text-xs text-blue-600 hover:underline mt-2 ml-2 font-medium"
+                    >
+                      {expandedOrderId === order.id ? 'Ocultar detalle' : 'Ver detalle'}
+                    </button>
                   </div>
-                  <div className="text-right flex items-center space-x-3">
+                  <div className="text-right flex items-center space-x-3 mt-3 sm:mt-0">
                     <div className="text-right">
                       <p className="font-bold text-gray-900">${order.total.toFixed(2)}</p>
                       {order.sync_status === 'pending' ? (
@@ -284,7 +292,21 @@ export const Orders = () => {
                         </>
                       )}
                     </div>
-                  </div>
+                    </div>
+                  
+                  {expandedOrderId === order.id && (
+                    <div className="mt-4 pt-3 border-t border-dashed border-gray-200 bg-gray-50 rounded p-3 text-sm">
+                      <p className="font-bold text-gray-700 mb-2">Productos:</p>
+                      <ul className="space-y-1">
+                        {order.items.map((item: any, idx: number) => (
+                          <li key={idx} className="flex justify-between text-gray-600">
+                            <span>{item.quantity}x {item.name}</span>
+                            <span className="font-semibold">${(item.price * item.quantity).toFixed(2)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </li>
               );
             })

@@ -225,7 +225,7 @@ export const useSync = () => {
         
         if (userObj && userObj.id) {
           while (hasNextPage) {
-            const ordersRes = await apiClient.get(`/ordenes?where[createdBy.value][equals]=${userObj.id}&limit=100&page=${page}`);
+            const ordersRes = await apiClient.get(`/ordenes?where[createdBy.value][equals]=${userObj.id}&limit=100&page=${page}&depth=1`);
             if (ordersRes.status === 200) {
               allBackendOrders = [...allBackendOrders, ...ordersRes.data.docs];
               hasNextPage = ordersRes.data.hasNextPage;
@@ -252,12 +252,15 @@ export const useSync = () => {
                   await db.orders.add({
                     backend_id: bOrder.id,
                     customer_id: customerId,
-                    items: bOrder.products?.map((p: any) => ({
-                      product_id: Array.isArray(p.product) ? (p.product[0]?.id || p.product[0]) : p.product,
-                      name: Array.isArray(p.product) ? (p.product[0]?.title || p.product[0]?.name || 'Producto') : 'Producto',
-                      quantity: Number(p.quantity),
-                      price: Number(p.price)
-                    })) || [],
+                    items: bOrder.products?.map((p: any) => {
+                      const prodRef = Array.isArray(p.product) ? p.product[0] : p.product;
+                      return {
+                        product_id: typeof prodRef === 'object' ? (prodRef?.id || prodRef?._id) : prodRef,
+                        name: typeof prodRef === 'object' ? (prodRef?.title || prodRef?.name || 'Producto') : 'Producto',
+                        quantity: Number(p.quantity),
+                        price: Number(p.price)
+                      };
+                    }) || [],
                     total: Number(bOrder.total),
                     totalBs: Number(bOrder.totalBs || 0),
                     exchangeRate: Number(bOrder.exchangeRate || 0),
