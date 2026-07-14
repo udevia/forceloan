@@ -66,10 +66,15 @@ export const useSync = () => {
               .map((u: any) => {
                 let createdById = undefined;
                 if (u.createdBy) {
-                  if (typeof u.createdBy.value === 'object' && u.createdBy.value !== null) {
-                    createdById = u.createdBy.value.id || u.createdBy.value._id;
+                  if (u.createdBy.value) {
+                    // Polimórfico
+                    createdById = typeof u.createdBy.value === 'object' ? (u.createdBy.value.id || u.createdBy.value._id) : u.createdBy.value;
+                  } else if (typeof u.createdBy === 'object') {
+                    // Relación normal poblada
+                    createdById = u.createdBy.id || u.createdBy._id;
                   } else {
-                    createdById = u.createdBy.value || u.createdBy;
+                    // ID simple (string/number)
+                    createdById = u.createdBy;
                   }
                 }
                 return {
