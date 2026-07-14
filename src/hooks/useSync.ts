@@ -358,7 +358,7 @@ export const useSync = () => {
             phone: c.phone || '0000000000',
             password: 'temporal_password',
             isTaxWithholdingAgent: Boolean(c.isTaxWithholdingAgent),
-            createdBy: c.createdBy,
+            ...(c.createdBy ? { createdBy: { relationTo: 'users', value: c.createdBy } } : {})
           };
 
           if (c.gps_location) {
