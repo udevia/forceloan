@@ -165,8 +165,8 @@ export const CustomerForm = ({ initialData, onCancel }: { initialData?: any, onC
                   Capturar
                 </button>
               </div>
-              {gpsLocation ? (
-                <p className="text-xs text-green-600">Capturado: {gpsLocation.lat.toFixed(5)}, {gpsLocation.lng.toFixed(5)}</p>
+              {gpsLocation && gpsLocation.lat != null && gpsLocation.lng != null ? (
+                <p className="text-xs text-green-600">Capturado: {Number(gpsLocation.lat).toFixed(5)}, {Number(gpsLocation.lng).toFixed(5)}</p>
               ) : (
                 <p className="text-xs text-gray-500">{gpsError || 'No capturada'}</p>
               )}
