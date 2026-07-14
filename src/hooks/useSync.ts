@@ -446,19 +446,27 @@ export const useSync = () => {
         const productsRes = await apiClient.get(`/productos?where[and][0][stockMain][greater_than]=0&where[and][1][inventoryStatus][equals]=active&limit=100&page=${page}&depth=1`);
         if (productsRes.status === 200) {
           const { docs, totalPages } = productsRes.data;
-          const products = docs.map((p: any) => ({
-            id: p.id,
-            name: p.title || p.name,
-            sku: p.sku || p.id,
-            price: p.price || 0,
-            taxRate: typeof p.tax === 'number' ? p.tax : (p.taxCategory?.rate ?? 16),
-            stock: p.stockMain || 0,
-            category: skuCategoryMap[p.sku || p.id] || 'Otras Categorías',
-            image_url: p.images?.[0]?.image?.url ? 
-              (p.images[0].image.url.startsWith('http') ? p.images[0].image.url : `https://galpon.loanmayorista.site${p.images[0].image.url}`) 
-              : '',
-            last_updated: Date.now()
-          }));
+          const products = docs.map((p: any) => {
+            const imgObj = p.images?.[0]?.image;
+            let finalUrl = '';
+            if (imgObj) {
+              const urlToUse = imgObj.sizes?.thumbnail?.url || imgObj.sizes?.small?.url || imgObj.url;
+              if (urlToUse) {
+                finalUrl = urlToUse.startsWith('http') ? urlToUse : `https://galpon.loanmayorista.site${urlToUse}`;
+              }
+            }
+            return {
+              id: p.id,
+              name: p.title || p.name,
+              sku: p.sku || p.id,
+              price: p.price || 0,
+              taxRate: typeof p.tax === 'number' ? p.tax : (p.taxCategory?.rate ?? 16),
+              stock: p.stockMain || 0,
+              category: skuCategoryMap[p.sku || p.id] || 'Otras Categorías',
+              image_url: finalUrl,
+              last_updated: Date.now()
+            };
+          });
           allProducts = [...allProducts, ...products];
           
           hasNextPage = productsRes.data.hasNextPage;
@@ -476,14 +484,16 @@ export const useSync = () => {
         for (let i = 0; i < allProducts.length; i += chunkSize) {
           await db.products.bulkPut(allProducts.slice(i, i + chunkSize));
         }
-        
+
+        // Cacheo en segundo plano muy lento para no ahogar la memoria del móvil
         const imageUrls = allProducts.map((p: any) => p.image_url).filter(Boolean);
         setTimeout(async () => {
            for (const url of imageUrls) {
                await fetch(url, { mode: 'no-cors' }).catch(() => {});
-               await new Promise(r => setTimeout(r, 50));
+               // 150ms de pausa entre cada imagen = 2.5 minutos para 1000 imagenes. ¡Seguro para la memoria!
+               await new Promise(r => setTimeout(r, 150)); 
            }
-        }, 100);
+        }, 1000);
       }
       updateProgress('products', 100);
     } catch (err: any) {
