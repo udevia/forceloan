@@ -533,8 +533,8 @@ export const useSync = () => {
 
       await db.products.clear();
       if (allProducts.length > 0) {
-        // Chunk inserts to avoid QuotaExceededError in mobile Safari due to transaction limits
-        const chunkSize = 250;
+        // Reducimos el chunk a 50 para evitar falsos QuotaExceededError en Safari por límites de transacción
+        const chunkSize = 50;
         for (let i = 0; i < allProducts.length; i += chunkSize) {
           await db.products.bulkPut(allProducts.slice(i, i + chunkSize));
         }
