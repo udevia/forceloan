@@ -496,8 +496,8 @@ export const useSync = () => {
       let allProducts: any[] = [];
       
       while (hasNextPage) {
-        // Añadimos &sort=-featured,title,id para obligar a MongoDB a tener un orden único y evitar que envíe clones en las páginas
-        const productsRes = await apiClient.get(`/productos?where[and][0][stockMain][greater_than]=0&where[and][1][inventoryStatus][equals]=active&sort=-featured,title,id&limit=100&page=${page}&depth=1`);
+        // Ordenamos ESTRICTAMENTE por ID para que PayloadCMS no repita productos en las páginas
+        const productsRes = await apiClient.get(`/productos?where[and][0][stockMain][greater_than]=0&where[and][1][inventoryStatus][equals]=active&sort=id&limit=100&page=${page}&depth=1`);
         if (productsRes.status === 200) {
           const { docs, totalPages } = productsRes.data;
           const products = docs.map((p: any) => {
