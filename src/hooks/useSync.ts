@@ -394,7 +394,11 @@ export const useSync = () => {
 
         await db.transaction('rw', db.customers, async () => {
           await db.customers.clear();
-          await db.customers.bulkPut([...deduplicatedFinal, ...offlineCustomers]);
+          const allToPut = [...deduplicatedFinal, ...offlineCustomers];
+          const chunkSize = 250;
+          for (let i = 0; i < allToPut.length; i += chunkSize) {
+            await db.customers.bulkPut(allToPut.slice(i, i + chunkSize));
+          }
         });
       }
       updateProgress('customers', 100);
@@ -447,7 +451,11 @@ export const useSync = () => {
 
       await db.products.clear();
       if (allProducts.length > 0) {
-        await db.products.bulkPut(allProducts);
+        // Chunk inserts to avoid QuotaExceededError in mobile Safari due to transaction limits
+        const chunkSize = 250;
+        for (let i = 0; i < allProducts.length; i += chunkSize) {
+          await db.products.bulkPut(allProducts.slice(i, i + chunkSize));
+        }
         
         const imageUrls = allProducts.map((p: any) => p.image_url).filter(Boolean);
         setTimeout(async () => {
