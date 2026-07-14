@@ -323,7 +323,7 @@ export const useSync = () => {
       let allValidCustomers: any[] = [];
       const offlineCustomers = await db.customers.where('sync_status').equals('pending').toArray();
       const sellerId = getSellerId();
-      const filterQuery = sellerId ? `&where[createdBy][equals]=${sellerId}` : '';
+      const filterQuery = sellerId ? `&where[createdBy.value][equals]=${sellerId}` : '';
 
       while (hasNextPage) {
         const usersRes = await apiClient.get(`/users?limit=100&page=${page}${filterQuery}`); 
@@ -400,7 +400,8 @@ export const useSync = () => {
       updateProgress('customers', 100);
     } catch (err: any) {
       console.error('Error en syncCustomers', err);
-      showError('Error en clientes: ' + (err.message || 'Error desconocido'));
+      const backendErr = err.response?.data?.errors ? JSON.stringify(err.response.data.errors) : (err.response?.data?.message || err.message);
+      showError('Error en clientes: ' + backendErr);
     } finally {
       setTimeout(() => updateProgress('isSyncingCustomers', false), 1000);
     }
@@ -576,7 +577,8 @@ export const useSync = () => {
       updateProgress('system', 100);
     } catch (err: any) {
       console.error('Error en syncSystemData', err);
-      showError('Error en sistema: ' + (err.message || 'Error desconocido'));
+      const backendErr = err.response?.data?.errors ? JSON.stringify(err.response.data.errors) : (err.response?.data?.message || err.message);
+      showError('Error en sistema: ' + backendErr);
     } finally {
       setTimeout(() => updateProgress('isSyncingSystem', false), 1000);
     }
