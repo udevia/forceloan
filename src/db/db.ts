@@ -41,6 +41,7 @@ export interface Product {
   stock: number;
   category?: string;
   image_url?: string;
+  local_image_base64?: string;
   last_updated: number;
 }
 

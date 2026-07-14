@@ -90,8 +90,8 @@ export const Catalog = () => {
             <article key={p.id} className="flex flex-col group bg-white rounded-md cursor-pointer transition-all duration-300 shadow-sm hover:shadow-md border border-gray-200 overflow-hidden h-full">
               {/* Imagen del producto */}
               <div className="relative w-full aspect-square bg-gray-100 flex items-center justify-center overflow-hidden">
-                {p.image_url ? (
-                  <img src={p.image_url} alt={p.name} className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${p.stock <= 0 ? 'opacity-50 grayscale' : ''}`} />
+                {(p.local_image_base64 || p.image_url) ? (
+                  <img src={p.local_image_base64 || p.image_url} alt={p.name} className={`w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 ${p.stock <= 0 ? 'opacity-50 grayscale' : ''}`} />
                 ) : (
                   <span className="text-gray-400 text-xs">Sin Imagen</span>
                 )}

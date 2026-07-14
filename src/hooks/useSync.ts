@@ -13,6 +13,7 @@ export type SyncProgress = {
   isSyncingOrders: boolean;
   isSyncingSystem: boolean;
   errorMsg: string | null;
+  imageSync: { isSyncing: boolean, total: number, current: number };
 };
 
 export const useSync = () => {
@@ -27,6 +28,7 @@ export const useSync = () => {
     isSyncingOrders: false,
     isSyncingSystem: false,
     errorMsg: null,
+    imageSync: { isSyncing: false, total: 0, current: 0 }
   });
 
   const updateProgress = (key: keyof SyncProgress, value: any) => {
@@ -80,6 +82,51 @@ export const useSync = () => {
       u8arr[n] = bstr.charCodeAt(n);
     }
     return new File([u8arr], filename, { type: mime });
+  };
+
+  const downloadAndCompressImage = async (url: string): Promise<string | null> => {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const blob = await res.blob();
+      
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            const MAX_WIDTH = 150;
+            const MAX_HEIGHT = 150;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+              if (width > MAX_WIDTH) {
+                height *= MAX_WIDTH / width;
+                width = MAX_WIDTH;
+              }
+            } else {
+              if (height > MAX_HEIGHT) {
+                width *= MAX_HEIGHT / height;
+                height = MAX_HEIGHT;
+              }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.6));
+          };
+          img.onerror = () => resolve(null);
+          img.src = e.target?.result as string;
+        };
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      return null;
+    }
   };
 
   // --- UPSTREAM ---
@@ -491,15 +538,33 @@ export const useSync = () => {
           await db.products.bulkPut(allProducts.slice(i, i + chunkSize));
         }
 
-        // Cacheo en segundo plano muy lento para no ahogar la memoria del móvil
-        const imageUrls = allProducts.map((p: any) => p.image_url).filter(Boolean);
-        setTimeout(async () => {
-           for (const url of imageUrls) {
-               await fetch(url, { mode: 'no-cors' }).catch(() => {});
-               // 150ms de pausa entre cada imagen = 2.5 minutos para 1000 imagenes. ¡Seguro para la memoria!
-               await new Promise(r => setTimeout(r, 150)); 
-           }
-        }, 1000);
+        // --- CACHÉ DE IMÁGENES OFFLINE ---
+        // Se ejecuta en segundo plano después de guardar los productos.
+        const productsWithImages = allProducts.filter(p => Boolean(p.image_url));
+        if (productsWithImages.length > 0) {
+          setTimeout(async () => {
+            updateProgress('imageSync', { isSyncing: true, total: productsWithImages.length, current: 0 });
+            let currentCount = 0;
+            
+            for (const p of productsWithImages) {
+              const base64 = await downloadAndCompressImage(p.image_url);
+              if (base64) {
+                try {
+                  await db.products.update(p.id, { local_image_base64: base64 });
+                } catch (e) {
+                  // Si da QuotaExceededError aquí, detenemos la caché silenciosamente
+                  break;
+                }
+              }
+              currentCount++;
+              updateProgress('imageSync', { isSyncing: true, total: productsWithImages.length, current: currentCount });
+              // Pequeña pausa para no bloquear la UI principal
+              await new Promise(r => setTimeout(r, 100));
+            }
+            
+            updateProgress('imageSync', { isSyncing: false, total: productsWithImages.length, current: productsWithImages.length });
+          }, 1000);
+        }
       }
       updateProgress('products', 100);
     } catch (err: any) {

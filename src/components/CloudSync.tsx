@@ -100,6 +100,15 @@ export const CloudSync = () => {
               </button>
             </div>
             {renderProgressBar(syncProgress.products, syncProgress.isSyncingProducts)}
+            {syncProgress.imageSync.isSyncing && (
+              <div className="mt-3 bg-blue-50 border border-blue-100 p-2 rounded-lg">
+                <div className="flex justify-between text-xs text-blue-700 mb-1">
+                  <span>Descargando miniaturas...</span>
+                  <span>{syncProgress.imageSync.current} / {syncProgress.imageSync.total}</span>
+                </div>
+                {renderProgressBar(Math.round((syncProgress.imageSync.current / Math.max(1, syncProgress.imageSync.total)) * 100), true)}
+              </div>
+            )}
           </div>
 
           {/* Tarjeta: Pedidos */}
