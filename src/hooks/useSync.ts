@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { db } from '../db/db';
 import { apiClient } from '../api/client';
+import { skuCategoryMap } from '../data/categoriesMap';
 
 export const useSync = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -54,7 +55,7 @@ export const useSync = () => {
           } catch (e) {}
         }
         
-        const filterQuery = sellerId ? `&where[createdBy.value][equals]=${sellerId}` : '';
+        const filterQuery = sellerId ? `&where[createdBy][equals]=${sellerId}` : '';
 
         while (hasNextPage) {
           const usersRes = await apiClient.get(`/users?limit=1000&page=${page}${filterQuery}`); 
@@ -182,6 +183,7 @@ export const useSync = () => {
               price: p.price || 0,
               taxRate: typeof p.tax === 'number' ? p.tax : (p.taxCategory?.rate ?? 16),
               stock: p.stockMain || 0,
+              category: skuCategoryMap[p.sku || p.id] || 'Otras Categorías',
               image_url: p.images?.[0]?.image?.url ? 
                 (p.images[0].image.url.startsWith('http') ? p.images[0].image.url : `https://galpon.loanmayorista.site${p.images[0].image.url}`) 
                 : '',

@@ -6,18 +6,29 @@ import { useCartStore } from '../store/cartStore';
 
 export const Catalog = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const { addItem, removeItem, updateQuantity, items } = useCartStore();
+
+  const allProducts = useLiveQuery(() => db.products.toArray(), []);
+
+  // Extraer categorías únicas de los productos descargados
+  const categories = ['Todas', ...Array.from(new Set(allProducts?.map(p => p.category || 'Otras Categorías') || [])).sort()];
 
   const products = useLiveQuery(
     () => {
-      if (searchTerm) {
-        return db.products
-          .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || Boolean(p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase())))
-          .toArray();
+      let query = db.products.toCollection();
+
+      if (selectedCategory !== 'Todas') {
+        query = db.products.filter(p => (p.category || 'Otras Categorías') === selectedCategory);
       }
-      return db.products.toArray();
+
+      if (searchTerm) {
+        return query.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || Boolean(p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))).toArray();
+      }
+
+      return query.toArray();
     },
-    [searchTerm]
+    [searchTerm, selectedCategory]
   );
 
   const getQuantityInCart = (productId: string) => {
@@ -27,18 +38,37 @@ export const Catalog = () => {
 
   return (
     <div className="p-4 space-y-4">
-      {/* Buscador */}
-      <div className="relative">
-        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-          <Search className="h-5 w-5 text-gray-400" />
+      {/* Buscador y Filtros */}
+      <div className="flex flex-col space-y-3">
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <Search className="h-5 w-5 text-gray-400" />
+          </div>
+          <input 
+            type="text" 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10 w-full border border-gray-300 rounded-lg p-3 shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
+            placeholder="Buscar producto por nombre o SKU..." 
+          />
         </div>
-        <input 
-          type="text" 
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="pl-10 w-full border border-gray-300 rounded-lg p-3 shadow-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors" 
-          placeholder="Buscar producto por nombre o SKU..." 
-        />
+
+        {/* Menú de Categorías (Scroll Horizontal) */}
+        <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          {categories.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-semibold transition-all shadow-sm ${
+                selectedCategory === cat 
+                  ? 'bg-blue-600 text-white border border-blue-600' 
+                  : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+              }`}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Grid de Productos */}
