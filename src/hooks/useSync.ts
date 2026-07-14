@@ -3,15 +3,38 @@ import { db } from '../db/db';
 import { apiClient } from '../api/client';
 import { skuCategoryMap } from '../data/categoriesMap';
 
+export type SyncProgress = {
+  customers: number;
+  products: number;
+  orders: number;
+  system: number;
+  isSyncingCustomers: boolean;
+  isSyncingProducts: boolean;
+  isSyncingOrders: boolean;
+  isSyncingSystem: boolean;
+};
+
 export const useSync = () => {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgress>({
+    customers: 0,
+    products: 0,
+    orders: 0,
+    system: 0,
+    isSyncingCustomers: false,
+    isSyncingProducts: false,
+    isSyncingOrders: false,
+    isSyncingSystem: false,
+  });
+
+  const updateProgress = (key: keyof SyncProgress, value: any) => {
+    setSyncProgress(prev => ({ ...prev, [key]: value }));
+  };
 
   useEffect(() => {
     const handleOnline = () => {
       setIsOnline(true);
-      triggerSync();
+      uploadOfflineData();
     };
     const handleOffline = () => setIsOnline(false);
 
@@ -24,286 +47,22 @@ export const useSync = () => {
     };
   }, []);
 
-  // Downstream: Descargar clientes del backend a Dexie
-  const downloadData = async () => {
-    if (!navigator.onLine) {
-      alert('Necesitas conexión para descargar clientes.');
-      return;
+  const getSellerId = () => {
+    const userStr = localStorage.getItem('payload-user');
+    if (userStr) {
+      try {
+        const userObj = JSON.parse(userStr);
+        return userObj.id;
+      } catch (e) {}
     }
-    
-    setIsDownloading(true);
-    console.log('Descargando datos...');
-
-    try {
-      // 0. Subir clientes y pedidos pendientes ANTES de descargar
-      await triggerSync();
-
-      // 1. Bajar clientes
-      try {
-        let hasNextPage = true;
-        let page = 1;
-        let allValidCustomers: any[] = [];
-        
-        const offlineCustomers = await db.customers.where('sync_status').equals('pending').toArray();
-
-        const userStr = localStorage.getItem('payload-user');
-        let sellerId = '';
-        if (userStr) {
-          try {
-            const userObj = JSON.parse(userStr);
-            sellerId = userObj.id;
-          } catch (e) {}
-        }
-        
-        const filterQuery = sellerId ? `&where[createdBy][equals]=${sellerId}` : '';
-
-        while (hasNextPage) {
-          const usersRes = await apiClient.get(`/users?limit=1000&page=${page}${filterQuery}`); 
-          if (usersRes.status === 200) {
-            const users = usersRes.data.docs;
-              const validCustomers = users
-              .filter((u: any) => u.dni && u.name)
-              .map((u: any) => {
-                let createdById = undefined;
-                if (u.createdBy) {
-                  if (u.createdBy.value) {
-                    // Polimórfico
-                    createdById = typeof u.createdBy.value === 'object' ? (u.createdBy.value.id || u.createdBy.value._id) : u.createdBy.value;
-                  } else if (typeof u.createdBy === 'object') {
-                    // Relación normal poblada
-                    createdById = u.createdBy.id || u.createdBy._id;
-                  } else {
-                    // ID simple (string/number)
-                    createdById = u.createdBy;
-                  }
-                }
-                return {
-                  id: u.id,
-                  name: u.name,
-                  dni: u.dni,
-                  dniType: u.dniType || 'V',
-                  email: u.email,
-                  phone: u.phone,
-                  address: u.address || '',
-                  gps_location: u.gps_location,
-                  document_images: u.document_images?.map((d: any) => d.image?.id || d.image || d),
-                  isTaxWithholdingAgent: u.isTaxWithholdingAgent,
-                  createdBy: createdById,
-                  sync_status: 'synced',
-                  created_at: Date.now()
-                };
-              });
-            allValidCustomers = [...allValidCustomers, ...validCustomers];
-            
-            hasNextPage = usersRes.data.hasNextPage;
-            page++;
-          } else {
-            hasNextPage = false;
-          }
-        }
-
-        if (allValidCustomers.length > 0) {
-          const localCustomers = await db.customers.toArray();
-          const localMap = new Map(localCustomers.map(c => [c.id, c]));
-
-          const mergedCustomers = allValidCustomers.map(c => {
-            const local = localMap.get(c.id);
-            if (local) {
-              return {
-                ...c,
-                gps_location: local.gps_location,
-                document_images: local.document_images,
-              };
-            }
-            return c;
-          });
-
-          const pendingIds = new Set(offlineCustomers.map(c => c.id));
-          const finalCustomers = mergedCustomers.filter(c => !pendingIds.has(c.id));
-          
-          // Eliminar cualquier posible duplicado por ID que venga de la paginación del API
-          const uniqueFinalCustomersMap = new Map();
-          finalCustomers.forEach(c => uniqueFinalCustomersMap.set(c.id, c));
-          const deduplicatedFinal = Array.from(uniqueFinalCustomersMap.values());
-
-          // Evitar que la DB se quede en cero si bulkAdd falla, usando transacción
-          await db.transaction('rw', db.customers, async () => {
-            await db.customers.clear();
-            await db.customers.bulkPut([...deduplicatedFinal, ...offlineCustomers]);
-          });
-          console.log(`${deduplicatedFinal.length} clientes descargados y guardados exitosamente.`);
-        }
-      } catch (err) {
-        console.error('Error bajando clientes:', err);
-      }
-
-      // 2. Descargar métodos de pago activos
-      try {
-        const paymentsRes = await apiClient.get('/paymentsGateway?where[isActive][equals]=true&limit=100');
-        if (paymentsRes.status === 200) {
-          const payments = paymentsRes.data.docs.map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            requiresBankInfo: p.requiresBankInfo,
-            requiresBills: p.requiresBills
-          }));
-          await db.paymentMethods.clear();
-          await db.paymentMethods.bulkAdd(payments);
-          console.log(`${payments.length} métodos de pago descargados.`);
-        }
-      } catch (err) {
-        console.error('Error bajando métodos de pago:', err);
-      }
-
-      // 3. Descargar tasa de cambio activa
-      try {
-        const exchangeRes = await apiClient.get('/exchange?where[is_active][equals]=true&limit=1');
-        if (exchangeRes.status === 200 && exchangeRes.data.docs.length > 0) {
-          const activeEx = exchangeRes.data.docs[0];
-          await db.exchange.clear();
-          await db.exchange.put({
-            id: activeEx.id,
-            price: Number(typeof activeEx.price === 'string' ? activeEx.price.replace(',', '.') : activeEx.price),
-            specialPrice: activeEx.specialPrice ? Number(typeof activeEx.specialPrice === 'string' ? activeEx.specialPrice.replace(',', '.') : activeEx.specialPrice) : undefined
-          });
-          console.log(`Tasa de cambio descargada.`);
-        }
-      } catch (err) {
-        console.error('Error bajando tasa de cambio:', err);
-      }
-
-      // 4. Descargar productos disponibles para la app
-      try {
-        let hasNextPage = true;
-        let page = 1;
-        let allProducts: any[] = [];
-        
-        while (hasNextPage) {
-          const productsRes = await apiClient.get(`/productos?where[and][0][stockMain][greater_than]=0&where[and][1][inventoryStatus][equals]=active&limit=1000&page=${page}&depth=1`);
-          if (productsRes.status === 200) {
-            const products = productsRes.data.docs.map((p: any) => ({
-              id: p.id,
-              name: p.title || p.name,
-              sku: p.sku || p.id,
-              price: p.price || 0,
-              taxRate: typeof p.tax === 'number' ? p.tax : (p.taxCategory?.rate ?? 16),
-              stock: p.stockMain || 0,
-              category: skuCategoryMap[p.sku || p.id] || 'Otras Categorías',
-              image_url: p.images?.[0]?.image?.url ? 
-                (p.images[0].image.url.startsWith('http') ? p.images[0].image.url : `https://galpon.loanmayorista.site${p.images[0].image.url}`) 
-                : '',
-              last_updated: Date.now()
-            }));
-            allProducts = [...allProducts, ...products];
-            
-            hasNextPage = productsRes.data.hasNextPage;
-            page++;
-          } else {
-            hasNextPage = false;
-          }
-        }
-
-        await db.products.clear();
-        if (allProducts.length > 0) {
-          await db.products.bulkAdd(allProducts);
-          console.log(`${allProducts.length} productos descargados.`);
-          
-          // Forzar la descarga de las imágenes en segundo plano paulatinamente para no congelar el Service Worker
-          const imageUrls = allProducts.map((p: any) => p.image_url).filter(Boolean);
-          setTimeout(async () => {
-             for (const url of imageUrls) {
-                 await fetch(url, { mode: 'no-cors' }).catch(() => {});
-                 // Pequeño descanso de 50ms entre cada imagen para no colapsar la red
-                 await new Promise(r => setTimeout(r, 50));
-             }
-          }, 100);
-        } else {
-          console.log(`No hay productos disponibles para la app. Catálogo local vaciado.`);
-        }
-      } catch (err) {
-        console.error('Error bajando productos:', err);
-      }
-
-      // 5. Descargar estados de pedidos / Historial de Pedidos del Vendedor
-      try {
-        let hasNextPage = true;
-        let page = 1;
-        let allBackendOrders: any[] = [];
-        const userStr = localStorage.getItem('payload-user');
-        const userObj = userStr ? JSON.parse(userStr) : null;
-        
-        if (userObj && userObj.id) {
-          while (hasNextPage) {
-            const ordersRes = await apiClient.get(`/ordenes?where[createdBy.value][equals]=${userObj.id}&limit=100&page=${page}&depth=1`);
-            if (ordersRes.status === 200) {
-              allBackendOrders = [...allBackendOrders, ...ordersRes.data.docs];
-              hasNextPage = ordersRes.data.hasNextPage;
-              page++;
-            } else {
-              hasNextPage = false;
-            }
-          }
-          
-          if (allBackendOrders.length > 0) {
-            for (const bOrder of allBackendOrders) {
-              const existingLocal = await db.orders.where('backend_id').equals(bOrder.id).first();
-              if (existingLocal) {
-                // Actualizar estado
-                await db.orders.update(Number(existingLocal.id!), {
-                  status_name: bOrder.status?.name || 'Recibido',
-                  status_color: bOrder.status?.color || '#10b981'
-                });
-              } else {
-                // Reconstruir pedido en formato Dexie (Backups secundarios o dispositivos nuevos)
-                const customerId = typeof bOrder.user === 'object' ? bOrder.user?.id : bOrder.user;
-                
-                if (customerId) {
-                  await db.orders.add({
-                    backend_id: bOrder.id,
-                    customer_id: customerId,
-                    items: bOrder.products?.map((p: any) => {
-                      const prodRef = Array.isArray(p.product) ? p.product[0] : p.product;
-                      return {
-                        product_id: typeof prodRef === 'object' ? (prodRef?.id || prodRef?._id) : prodRef,
-                        name: typeof prodRef === 'object' ? (prodRef?.title || prodRef?.name || 'Producto') : 'Producto',
-                        quantity: Number(p.quantity),
-                        price: Number(p.price)
-                      };
-                    }) || [],
-                    subtotal: Number(bOrder.total) - Number(bOrder.taxTotal || 0),
-                    taxTotal: Number(bOrder.taxTotal || 0),
-                    total: Number(bOrder.total),
-                    totalBs: Number(bOrder.totalBs || 0),
-                    exchangeRate: Number(bOrder.exchangeRate || 0),
-                    is_credit: Boolean(bOrder.isCredit),
-                    sync_status: 'synced',
-                    status_name: bOrder.status?.name || 'Recibido',
-                    status_color: bOrder.status?.color || '#10b981',
-                    created_at: new Date(bOrder.createdAt).getTime()
-                  });
-                }
-              }
-            }
-            console.log(`Estados actualizados y/o reconstruidos de ${allBackendOrders.length} pedidos históricos.`);
-          }
-        }
-      } catch (err) {
-        console.error('Error bajando historial de pedidos:', err);
-      }
-
-      alert('¡Sincronización descendente completada exitosamente!');
-    } catch (error) {
-      console.error('Error descargando clientes:', error);
-      alert('Hubo un error al actualizar los clientes. Asegúrate de que el backend tenga los permisos actualizados.');
-    } finally {
-      setIsDownloading(false);
-    }
+    return '';
   };
+
   const base64ToFile = (base64String: string, filename: string): File => {
     const arr = base64String.split(',');
     const mimeMatch = arr[0].match(/:(.*?);/);
     const mime = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-    const bstr = atob(arr[1] || base64String); // Fallback por si no tiene header
+    const bstr = atob(arr[1] || base64String); 
     let n = bstr.length;
     const u8arr = new Uint8Array(n);
     while (n--) {
@@ -312,252 +71,537 @@ export const useSync = () => {
     return new File([u8arr], filename, { type: mime });
   };
 
-  // Upstream: Subir datos offline al servidor
-  const triggerSync = async () => {
-    if (!navigator.onLine || isSyncing) return;
-    
-    setIsSyncing(true);
-    console.log('Iniciando sincronización diferida (Upstream)...');
+  // --- UPSTREAM ---
+  const uploadCustomers = async () => {
+    const pendingCustomers = await db.customers.where('sync_status').equals('pending').toArray();
+    if (pendingCustomers.length === 0) return true;
 
-    try {
-      const pendingCustomers = await db.customers.where('sync_status').equals('pending').toArray();
-
-      // 1. Subir Clientes
-      for (const c of pendingCustomers) {
-        try {
-          const cleanDni = c.dni.replace(/\D/g, ''); // Remover cualquier caracter no numérico
-          
-          // Subir imágenes si existen
-          const uploadedMediaIds: string[] = [];
-          if (c.document_images && c.document_images.length > 0) {
-            for (let i = 0; i < c.document_images.length; i++) {
-              const base64Str = c.document_images[i];
-              // Evitar intentar subir si ya es un ID de Payload
-              if (!base64Str.startsWith('data:image')) {
-                uploadedMediaIds.push(base64Str);
-                continue;
-              }
+    for (const c of pendingCustomers) {
+      try {
+        const cleanDni = c.dni.replace(/\D/g, ''); 
+        const uploadedMediaIds: string[] = [];
+        if (c.document_images && c.document_images.length > 0) {
+          for (let i = 0; i < c.document_images.length; i++) {
+            const base64Str = c.document_images[i];
+            if (!base64Str.startsWith('data:image')) {
+              uploadedMediaIds.push(base64Str);
+              continue;
+            }
+            try {
+              const file = base64ToFile(base64Str, `doc_${cleanDni}_${i}.jpg`);
+              const formData = new FormData();
+              formData.append('file', file);
+              formData.append('alt', `Documento Cliente ${cleanDni}`);
               
+              const mediaRes = await apiClient.post('/media', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
+              });
+              
+              if (mediaRes.status === 201) {
+                uploadedMediaIds.push(mediaRes.data.doc.id);
+              }
+            } catch (mediaErr) {
+              console.error(`Error subiendo imagen ${i} de documento:`, mediaErr);
+            }
+          }
+        }
+        
+        const payload: any = {
+          name: c.name,
+          dni: cleanDni,
+          dniType: c.dniType || 'V',
+          email: c.email || `${Date.now()}@temp.com`,
+          phone: c.phone || '0000000000',
+          password: 'temporal_password',
+          isTaxWithholdingAgent: Boolean(c.isTaxWithholdingAgent),
+          createdBy: c.createdBy,
+        };
+
+        if (c.gps_location) {
+          payload.gps_location = {
+            lat: Number(c.gps_location.lat),
+            lng: Number(c.gps_location.lng)
+          };
+        }
+        
+        if (uploadedMediaIds.length > 0) {
+          payload.document_images = uploadedMediaIds.map(id => ({ image: id }));
+        }
+
+        let res;
+        const isLocalId = typeof c.id === 'number' || (typeof c.id === 'string' && c.id.length < 24) || String(c.id).startsWith('local_');
+
+        if (c.id && !isLocalId) {
+          try {
+            res = await apiClient.patch(`/users/${c.id}`, payload);
+          } catch (e: any) {
+            if (e.response?.status === 404) {
+              res = await apiClient.post('/users', payload);
+            } else {
+              throw e;
+            }
+          }
+        } else {
+          res = await apiClient.post('/users', payload);
+        }
+        
+        if (res.status === 201 || res.status === 200) {
+          const backendId = res.data.doc.id;
+          await db.customers.delete(c.id!);
+          await db.customers.add({ ...c, id: backendId, sync_status: 'synced' });
+          
+          const ordersToUpdate = await db.orders.where('customer_id').equals(c.id!).toArray();
+          for (const order of ordersToUpdate) {
+            await db.orders.update(Number(order.id!), { customer_id: backendId });
+          }
+        }
+      } catch (e: any) {
+        console.error('Error subiendo cliente:', e);
+      }
+    }
+    return true;
+  };
+
+  const uploadOrders = async () => {
+    const pendingOrders = await db.orders.where('sync_status').equals('pending').toArray();
+    if (pendingOrders.length === 0) return true;
+
+    const activeExchange = await db.exchange.toArray();
+    const exchangeId = activeExchange.length > 0 ? activeExchange[0].id : undefined;
+
+    let newStatusId = undefined;
+    try {
+      const statusRes = await apiClient.get('/status-orders?limit=100');
+      if (statusRes.status === 200 && statusRes.data.docs) {
+        const statuses = statusRes.data.docs;
+        const target = statuses.find((s: any) => s.name?.toLowerCase().includes('nuevo') || s.name?.toLowerCase().includes('nueva') || s.name?.toLowerCase().includes('pendiente'));
+        if (target) newStatusId = target.id;
+      }
+    } catch (err) {}
+
+    for (const o of pendingOrders) {
+      try {
+        let bankInfoToUpload = o.bank_info || [];
+        
+        if (bankInfoToUpload.length > 0) {
+          const updatedBankInfo = [];
+          for (const bi of bankInfoToUpload) {
+            let receiptId = undefined;
+            if (bi.receiptBase64) {
               try {
-                const file = base64ToFile(base64Str, `doc_${cleanDni}_${i}.jpg`);
+                const res = await fetch(bi.receiptBase64);
+                const blob = await res.blob();
+                const file = new File([blob], `comprobante_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
                 const formData = new FormData();
                 formData.append('file', file);
-                formData.append('alt', `Documento Cliente ${cleanDni}`);
+                formData.append('alt', `Recibo de pago - Ref ${bi.transaction}`);
+                formData.append('documentType', 'payment');
                 
-                const mediaRes = await apiClient.post('/media', formData, {
+                const uploadRes = await apiClient.post('/financial-docs', formData, {
                   headers: { 'Content-Type': 'multipart/form-data' }
                 });
-                
-                if (mediaRes.status === 201) {
-                  uploadedMediaIds.push(mediaRes.data.doc.id);
-                }
-              } catch (mediaErr) {
-                console.error(`Error subiendo imagen ${i} de documento:`, mediaErr);
+                receiptId = uploadRes.data.doc.id;
+              } catch (imgErr) {
+                console.error('Error subiendo comprobante:', imgErr);
               }
             }
-          }
-          
-          const payload: any = {
-            name: c.name,
-            dni: cleanDni,
-            dniType: c.dniType || 'V',
-            email: c.email || `${Date.now()}@temp.com`,
-            phone: c.phone || '0000000000',
-            password: 'temporal_password',
-            isTaxWithholdingAgent: Boolean(c.isTaxWithholdingAgent),
-            createdBy: c.createdBy,
-          };
-
-          if (c.gps_location) {
-            payload.gps_location = {
-              lat: Number(c.gps_location.lat),
-              lng: Number(c.gps_location.lng)
-            };
-          }
-          
-          if (uploadedMediaIds.length > 0) {
-            payload.document_images = uploadedMediaIds.map(id => ({ image: id }));
-          }
-
-          let res;
-          // Un ID válido de MongoDB tiene 24 caracteres hex. Si es un número o un string corto, es local.
-          const isLocalId = typeof c.id === 'number' || (typeof c.id === 'string' && c.id.length < 24) || String(c.id).startsWith('local_');
-
-          if (c.id && !isLocalId) {
-            try {
-              res = await apiClient.patch(`/users/${c.id}`, payload);
-            } catch (e: any) {
-              if (e.response?.status === 404) {
-                res = await apiClient.post('/users', payload);
-              } else {
-                throw e;
-              }
-            }
-          } else {
-            // Cliente completamente nuevo local
-            res = await apiClient.post('/users', payload);
-          }
-          
-          if (res.status === 201 || res.status === 200) {
-            const backendId = res.data.doc.id;
-            
-            // Dexie no permite cambiar la clave primaria directamente, así que borramos y recreamos
-            await db.customers.delete(c.id!);
-            await db.customers.add({ ...c, id: backendId, sync_status: 'synced' });
-            
-            // Actualizar todos los pedidos locales que hacían referencia al ID numérico temporal
-            const ordersToUpdate = await db.orders.where('customer_id').equals(c.id!).toArray();
-            for (const order of ordersToUpdate) {
-              await db.orders.update(Number(order.id!), { customer_id: backendId });
-            }
-          }
-        } catch (e: any) {
-          console.error('Error subiendo cliente:', e);
-          const errorMsg = e.response?.data?.errors 
-            ? JSON.stringify(e.response.data.errors) 
-            : (e.response?.data?.message || e.message);
-          alert(`Error al subir el cliente ${c.name}: ${errorMsg}`);
-        }
-      }
-
-      // 2. Subir Pedidos
-      // Consultamos los pedidos pendientes DESPUÉS de subir clientes para tener los customer_id actualizados
-      const pendingOrders = await db.orders.where('sync_status').equals('pending').toArray();
-      const activeExchange = await db.exchange.toArray();
-      const exchangeId = activeExchange.length > 0 ? activeExchange[0].id : undefined;
-
-      // Buscar el ID del estatus "Nuevo"
-      let newStatusId = undefined;
-      try {
-        const statusRes = await apiClient.get('/status-orders?limit=100');
-        if (statusRes.status === 200 && statusRes.data.docs) {
-          const statuses = statusRes.data.docs;
-          const target = statuses.find((s: any) => s.name?.toLowerCase().includes('nuevo') || s.name?.toLowerCase().includes('nueva') || s.name?.toLowerCase().includes('pendiente'));
-          if (target) newStatusId = target.id;
-        }
-      } catch (err) {
-        console.error('No se pudo cargar la lista de estados:', err);
-      }
-
-      for (const o of pendingOrders) {
-        try {
-          // Procesar recibos si hay pagos bancarios
-          let bankInfoToUpload = o.bank_info || [];
-          
-          if (bankInfoToUpload.length > 0) {
-            const updatedBankInfo = [];
-            for (const bi of bankInfoToUpload) {
-              let receiptId = undefined;
-              if (bi.receiptBase64) {
-                try {
-                  // Convertir Base64 a File
-                  const res = await fetch(bi.receiptBase64);
-                  const blob = await res.blob();
-                  const file = new File([blob], `comprobante_${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
-                  
-                  const formData = new FormData();
-                  formData.append('file', file);
-                  formData.append('alt', `Recibo de pago - Ref ${bi.transaction}`);
-                  formData.append('documentType', 'payment');
-                  
-                  const uploadRes = await apiClient.post('/financial-docs', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                  });
-                  receiptId = uploadRes.data.doc.id;
-                } catch (imgErr) {
-                  console.error('Error subiendo comprobante:', imgErr);
-                }
-              }
-              
-              updatedBankInfo.push({
-                transaction: bi.transaction,
-                transmitter: bi.transmitter,
-                amount: Number(bi.amount),
-                paymentGateway: bi.paymentGateway,
-                ...(receiptId && { receipt: receiptId })
-              });
-            }
-            bankInfoToUpload = updatedBankInfo;
-          }
-
-          const orderPayload: any = {
-            user: o.customer_id, // Ahora es un ID válido del backend
-            products: o.items.map(i => ({ 
-              product: [i.product_id], // Payload hasMany: true requiere un array de IDs
-              quantity: String(i.quantity), 
-              price: String(i.price) 
-            })),
-            total: String(o.total),
-            taxTotal: o.taxTotal ? String(o.taxTotal) : undefined,
-            totalBs: String(o.totalBs),
-            exchange: exchangeId,
-            exchangeRate: Number(o.exchangeRate),
-            isCredit: Boolean(o.is_credit),
-            bankInfo: bankInfoToUpload,
-            paymentCash: o.payment_cash || [],
-          };
-
-          if (newStatusId) {
-            orderPayload.status = newStatusId;
-          }
-
-          const res = await apiClient.post('/ordenes', orderPayload);
-          
-          if (res.status === 201 || res.status === 200) {
-            await db.orders.update(Number(o.id), { 
-              sync_status: 'synced',
-              backend_id: res.data.doc.id,
-              status_name: res.data.doc.status?.name || 'Nuevo',
-              status_color: res.data.doc.status?.color || '#10b981'
+            updatedBankInfo.push({
+              transaction: bi.transaction,
+              transmitter: bi.transmitter,
+              amount: Number(bi.amount),
+              paymentGateway: bi.paymentGateway,
+              ...(receiptId && { receipt: receiptId })
             });
           }
-        } catch (e: any) {
-          console.error('Error subiendo pedido:', e);
-          if (e.response && e.response.data) {
-             const errorMsg = JSON.stringify(e.response.data.errors || e.response.data);
-             console.error('Detalles del backend:', errorMsg);
-             alert('El backend rechazó el pedido. Razón: ' + errorMsg);
-          } else {
-             alert('Error de conexión o timeout al subir el pedido.');
-          }
+          bankInfoToUpload = updatedBankInfo;
         }
+
+        const orderPayload: any = {
+          user: o.customer_id,
+          products: o.items.map(i => ({ 
+            product: [i.product_id], 
+            quantity: String(i.quantity), 
+            price: String(i.price) 
+          })),
+          total: String(o.total),
+          taxTotal: o.taxTotal ? String(o.taxTotal) : undefined,
+          totalBs: String(o.totalBs),
+          exchange: exchangeId,
+          exchangeRate: Number(o.exchangeRate),
+          isCredit: Boolean(o.is_credit),
+          bankInfo: bankInfoToUpload,
+          paymentCash: o.payment_cash || [],
+        };
+
+        if (newStatusId) {
+          orderPayload.status = newStatusId;
+        }
+
+        const res = await apiClient.post('/ordenes', orderPayload);
+        
+        if (res.status === 201 || res.status === 200) {
+          await db.orders.update(Number(o.id), { 
+            sync_status: 'synced',
+            backend_id: res.data.doc.id,
+            status_name: res.data.doc.status?.name || 'Nuevo',
+            status_color: res.data.doc.status?.color || '#10b981'
+          });
+        }
+      } catch (e: any) {
+        console.error('Error subiendo pedido:', e);
       }
+    }
+    return true;
+  };
+
+  const backupToCloud = async () => {
+    try {
+      const sellerId = getSellerId();
+      if (!sellerId) return;
       
-      console.log('Sincronización Upstream finalizada. Realizando copia de seguridad en la nube...');
-      try {
-        const userStr = localStorage.getItem('payload-user');
-        if (userStr) {
-          const userObj = JSON.parse(userStr);
-          if (userObj && userObj.id) {
-            const allCustomers = await db.customers.toArray();
-            const allOrders = await db.orders.toArray();
-            
-            const backupPayload = {
-              vendedor: userObj.id,
-              customersData: allCustomers,
-              ordersData: allOrders
-            };
-            
-            // Buscar si ya existe un respaldo
-            const backupRes = await apiClient.get(`/seller-backups?where[vendedor][equals]=${userObj.id}`);
-            if (backupRes.status === 200 && backupRes.data.docs && backupRes.data.docs.length > 0) {
-              const backupId = backupRes.data.docs[0].id;
-              await apiClient.patch(`/seller-backups/${backupId}`, backupPayload);
-            } else {
-              await apiClient.post('/seller-backups', backupPayload);
-            }
-            console.log('Respaldo en la nube completado exitosamente.');
-          }
-        }
-      } catch (backupErr) {
-        console.error('Error al realizar el respaldo en la nube:', backupErr);
+      const allCustomers = await db.customers.toArray();
+      const allOrders = await db.orders.toArray();
+      
+      const backupPayload = {
+        vendedor: sellerId,
+        customersData: allCustomers,
+        ordersData: allOrders
+      };
+      
+      const backupRes = await apiClient.get(`/seller-backups?where[vendedor][equals]=${sellerId}`);
+      if (backupRes.status === 200 && backupRes.data.docs && backupRes.data.docs.length > 0) {
+        const backupId = backupRes.data.docs[0].id;
+        await apiClient.patch(`/seller-backups/${backupId}`, backupPayload);
+      } else {
+        await apiClient.post('/seller-backups', backupPayload);
       }
-    } catch (error) {
-      console.error('Error general durante la sincronización:', error);
-    } finally {
-      setIsSyncing(false);
+    } catch (backupErr) {
+      console.error('Error al realizar el respaldo:', backupErr);
     }
   };
 
-  return { isOnline, isSyncing, isDownloading, triggerSync, downloadData };
+  const uploadOfflineData = async () => {
+    if (!navigator.onLine) return;
+    await uploadCustomers();
+    await uploadOrders();
+    await backupToCloud();
+  };
+
+  // --- MODULAR SYNC ---
+  const syncCustomers = async () => {
+    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    updateProgress('isSyncingCustomers', true);
+    updateProgress('customers', 0);
+    
+    try {
+      await uploadCustomers();
+      
+      let hasNextPage = true;
+      let page = 1;
+      let allValidCustomers: any[] = [];
+      const offlineCustomers = await db.customers.where('sync_status').equals('pending').toArray();
+      const sellerId = getSellerId();
+      const filterQuery = sellerId ? `&where[createdBy][equals]=${sellerId}` : '';
+
+      while (hasNextPage) {
+        const usersRes = await apiClient.get(`/users?limit=100&page=${page}${filterQuery}`); 
+        if (usersRes.status === 200) {
+          const { docs, totalPages } = usersRes.data;
+          
+          const validCustomers = docs
+          .filter((u: any) => u.dni && u.name)
+          .map((u: any) => {
+            let createdById = undefined;
+            if (u.createdBy) {
+              if (u.createdBy.value) {
+                createdById = typeof u.createdBy.value === 'object' ? (u.createdBy.value.id || u.createdBy.value._id) : u.createdBy.value;
+              } else if (typeof u.createdBy === 'object') {
+                createdById = u.createdBy.id || u.createdBy._id;
+              } else {
+                createdById = u.createdBy;
+              }
+            }
+            return {
+              id: u.id,
+              name: u.name,
+              dni: u.dni,
+              dniType: u.dniType || 'V',
+              email: u.email,
+              phone: u.phone,
+              address: u.address || '',
+              gps_location: u.gps_location,
+              document_images: u.document_images?.map((d: any) => d.image?.id || d.image || d),
+              isTaxWithholdingAgent: u.isTaxWithholdingAgent,
+              createdBy: createdById,
+              sync_status: 'synced',
+              created_at: Date.now()
+            };
+          });
+          allValidCustomers = [...allValidCustomers, ...validCustomers];
+          
+          hasNextPage = usersRes.data.hasNextPage;
+          page++;
+          updateProgress('customers', Math.round(((page - 1) / (totalPages || 1)) * 100));
+        } else {
+          hasNextPage = false;
+        }
+      }
+
+      if (allValidCustomers.length > 0) {
+        const localCustomers = await db.customers.toArray();
+        const localMap = new Map(localCustomers.map(c => [c.id, c]));
+
+        const mergedCustomers = allValidCustomers.map(c => {
+          const local = localMap.get(c.id);
+          if (local) {
+            return {
+              ...c,
+              gps_location: local.gps_location,
+              document_images: local.document_images,
+            };
+          }
+          return c;
+        });
+
+        const pendingIds = new Set(offlineCustomers.map(c => c.id));
+        const finalCustomers = mergedCustomers.filter(c => !pendingIds.has(c.id));
+        
+        const uniqueFinalCustomersMap = new Map();
+        finalCustomers.forEach(c => uniqueFinalCustomersMap.set(c.id, c));
+        const deduplicatedFinal = Array.from(uniqueFinalCustomersMap.values());
+
+        await db.transaction('rw', db.customers, async () => {
+          await db.customers.clear();
+          await db.customers.bulkPut([...deduplicatedFinal, ...offlineCustomers]);
+        });
+      }
+      updateProgress('customers', 100);
+    } catch (err) {
+      console.error('Error en syncCustomers', err);
+    } finally {
+      setTimeout(() => updateProgress('isSyncingCustomers', false), 1000);
+    }
+  };
+
+  const syncProducts = async () => {
+    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    updateProgress('isSyncingProducts', true);
+    updateProgress('products', 0);
+    
+    try {
+      let hasNextPage = true;
+      let page = 1;
+      let allProducts: any[] = [];
+      
+      while (hasNextPage) {
+        const productsRes = await apiClient.get(`/productos?where[and][0][stockMain][greater_than]=0&where[and][1][inventoryStatus][equals]=active&limit=100&page=${page}&depth=1`);
+        if (productsRes.status === 200) {
+          const { docs, totalPages } = productsRes.data;
+          const products = docs.map((p: any) => ({
+            id: p.id,
+            name: p.title || p.name,
+            sku: p.sku || p.id,
+            price: p.price || 0,
+            taxRate: typeof p.tax === 'number' ? p.tax : (p.taxCategory?.rate ?? 16),
+            stock: p.stockMain || 0,
+            category: skuCategoryMap[p.sku || p.id] || 'Otras Categorías',
+            image_url: p.images?.[0]?.image?.url ? 
+              (p.images[0].image.url.startsWith('http') ? p.images[0].image.url : `https://galpon.loanmayorista.site${p.images[0].image.url}`) 
+              : '',
+            last_updated: Date.now()
+          }));
+          allProducts = [...allProducts, ...products];
+          
+          hasNextPage = productsRes.data.hasNextPage;
+          page++;
+          updateProgress('products', Math.round(((page - 1) / (totalPages || 1)) * 100));
+        } else {
+          hasNextPage = false;
+        }
+      }
+
+      await db.products.clear();
+      if (allProducts.length > 0) {
+        await db.products.bulkAdd(allProducts);
+        
+        const imageUrls = allProducts.map((p: any) => p.image_url).filter(Boolean);
+        setTimeout(async () => {
+           for (const url of imageUrls) {
+               await fetch(url, { mode: 'no-cors' }).catch(() => {});
+               await new Promise(r => setTimeout(r, 50));
+           }
+        }, 100);
+      }
+      updateProgress('products', 100);
+    } catch (err) {
+      console.error('Error en syncProducts', err);
+    } finally {
+      setTimeout(() => updateProgress('isSyncingProducts', false), 1000);
+    }
+  };
+
+  const syncOrders = async () => {
+    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    updateProgress('isSyncingOrders', true);
+    updateProgress('orders', 0);
+    
+    try {
+      await uploadOrders();
+      updateProgress('orders', 25);
+      
+      let hasNextPage = true;
+      let page = 1;
+      let allBackendOrders: any[] = [];
+      const sellerId = getSellerId();
+      
+      if (sellerId) {
+        while (hasNextPage) {
+          const ordersRes = await apiClient.get(`/ordenes?where[createdBy.value][equals]=${sellerId}&limit=50&page=${page}&depth=1`);
+          if (ordersRes.status === 200) {
+            const { docs, totalPages } = ordersRes.data;
+            allBackendOrders = [...allBackendOrders, ...docs];
+            hasNextPage = ordersRes.data.hasNextPage;
+            page++;
+            updateProgress('orders', 25 + Math.round(((page - 1) / (totalPages || 1)) * 75));
+          } else {
+            hasNextPage = false;
+          }
+        }
+        
+        if (allBackendOrders.length > 0) {
+          for (const bOrder of allBackendOrders) {
+            const existingLocal = await db.orders.where('backend_id').equals(bOrder.id).first();
+            if (existingLocal) {
+              await db.orders.update(Number(existingLocal.id!), {
+                status_name: bOrder.status?.name || 'Recibido',
+                status_color: bOrder.status?.color || '#10b981'
+              });
+            } else {
+              const customerId = typeof bOrder.user === 'object' ? bOrder.user?.id : bOrder.user;
+              if (customerId) {
+                await db.orders.add({
+                  backend_id: bOrder.id,
+                  customer_id: customerId,
+                  items: bOrder.products?.map((p: any) => {
+                    const prodRef = Array.isArray(p.product) ? p.product[0] : p.product;
+                    return {
+                      product_id: typeof prodRef === 'object' ? (prodRef?.id || prodRef?._id) : prodRef,
+                      name: typeof prodRef === 'object' ? (prodRef?.title || prodRef?.name || 'Producto') : 'Producto',
+                      quantity: Number(p.quantity),
+                      price: Number(p.price)
+                    };
+                  }) || [],
+                  subtotal: Number(bOrder.total) - Number(bOrder.taxTotal || 0),
+                  taxTotal: Number(bOrder.taxTotal || 0),
+                  total: Number(bOrder.total),
+                  totalBs: Number(bOrder.totalBs || 0),
+                  exchangeRate: Number(bOrder.exchangeRate || 0),
+                  is_credit: Boolean(bOrder.isCredit),
+                  sync_status: 'synced',
+                  status_name: bOrder.status?.name || 'Recibido',
+                  status_color: bOrder.status?.color || '#10b981',
+                  created_at: new Date(bOrder.createdAt).getTime()
+                });
+              }
+            }
+          }
+        }
+      }
+      updateProgress('orders', 100);
+      await backupToCloud();
+    } catch (err) {
+      console.error('Error en syncOrders', err);
+    } finally {
+      setTimeout(() => updateProgress('isSyncingOrders', false), 1000);
+    }
+  };
+
+  const syncSystemData = async () => {
+    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    updateProgress('isSyncingSystem', true);
+    updateProgress('system', 0);
+    
+    try {
+      const paymentsRes = await apiClient.get('/paymentsGateway?where[isActive][equals]=true&limit=100');
+      if (paymentsRes.status === 200) {
+        const payments = paymentsRes.data.docs.map((p: any) => ({
+          id: p.id,
+          name: p.name,
+          requiresBankInfo: p.requiresBankInfo,
+          requiresBills: p.requiresBills
+        }));
+        await db.paymentMethods.clear();
+        await db.paymentMethods.bulkAdd(payments);
+      }
+      updateProgress('system', 50);
+
+      const exchangeRes = await apiClient.get('/exchange?where[is_active][equals]=true&limit=1');
+      if (exchangeRes.status === 200 && exchangeRes.data.docs.length > 0) {
+        const activeEx = exchangeRes.data.docs[0];
+        await db.exchange.clear();
+        await db.exchange.put({
+          id: activeEx.id,
+          price: Number(typeof activeEx.price === 'string' ? activeEx.price.replace(',', '.') : activeEx.price),
+          specialPrice: activeEx.specialPrice ? Number(typeof activeEx.specialPrice === 'string' ? activeEx.specialPrice.replace(',', '.') : activeEx.specialPrice) : undefined
+        });
+      }
+      updateProgress('system', 100);
+    } catch (err) {
+      console.error('Error en syncSystemData', err);
+    } finally {
+      setTimeout(() => updateProgress('isSyncingSystem', false), 1000);
+    }
+  };
+
+  const syncAll = async () => {
+    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    await syncSystemData();
+    await syncCustomers();
+    await syncProducts();
+    await syncOrders();
+  };
+
+  const clearDeviceCache = async () => {
+    const isConfirmed = window.confirm(
+      "¡ADVERTENCIA! Vas a borrar TODOS los datos locales de tu dispositivo (excepto tu sesión).\n\n" +
+      "Los pedidos y clientes 'pendientes' (offline) que no hayas sincronizado se perderán IRREMEDIABLEMENTE.\n\n" +
+      "¿Estás ABSOLUTAMENTE seguro de que quieres limpiar la aplicación?"
+    );
+
+    if (!isConfirmed) return;
+
+    try {
+      await db.customers.clear();
+      await db.products.clear();
+      await db.orders.clear();
+      await db.paymentMethods.clear();
+      await db.exchange.clear();
+      
+      alert("Base de datos local eliminada con éxito. La aplicación se recargará para asegurar un estado limpio.");
+      window.location.reload();
+    } catch (e) {
+      console.error('Error limpiando caché local:', e);
+      alert('Error al limpiar los datos locales.');
+    }
+  };
+
+  const triggerSync = uploadOfflineData;
+  const downloadData = syncAll;
+  const isDownloading = syncProgress.isSyncingCustomers || syncProgress.isSyncingProducts || syncProgress.isSyncingOrders || syncProgress.isSyncingSystem;
+  const isSyncing = isDownloading;
+
+  return { 
+    isOnline, 
+    isSyncing, 
+    isDownloading, 
+    triggerSync, 
+    downloadData,
+    syncProgress,
+    syncCustomers,
+    syncProducts,
+    syncOrders,
+    syncSystemData,
+    syncAll,
+    clearDeviceCache
+  };
 };
