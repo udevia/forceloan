@@ -53,7 +53,7 @@ export const Catalog = () => {
           />
         </div>
 
-        {/* Menú de Categorías (Scroll Horizontal) */}
+        {/* Menú de Categorías Oculto Temporalmente 
         <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {categories.map(cat => (
             <button
@@ -69,6 +69,7 @@ export const Catalog = () => {
             </button>
           ))}
         </div>
+        */}
       </div>
 
       {/* Grid de Productos */}
