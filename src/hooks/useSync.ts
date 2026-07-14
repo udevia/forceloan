@@ -173,7 +173,7 @@ export const useSync = () => {
         let allProducts: any[] = [];
         
         while (hasNextPage) {
-          const productsRes = await apiClient.get(`/productos?where[and][0][availableForApp][equals]=true&where[and][1][inventoryStatus][equals]=active&limit=1000&page=${page}&depth=1`);
+          const productsRes = await apiClient.get(`/productos?where[and][0][stockMain][greater_than]=0&where[and][1][inventoryStatus][equals]=active&limit=1000&page=${page}&depth=1`);
           if (productsRes.status === 200) {
             const products = productsRes.data.docs.map((p: any) => ({
               id: p.id,
