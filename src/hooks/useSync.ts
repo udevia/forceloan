@@ -358,7 +358,7 @@ export const useSync = () => {
             phone: c.phone || '0000000000',
             password: 'temporal_password',
             isTaxWithholdingAgent: Boolean(c.isTaxWithholdingAgent),
-            ...(c.createdBy ? { createdBy: { relationTo: 'users', value: c.createdBy } } : {})
+            createdBy: c.createdBy,
           };
 
           if (c.gps_location) {
@@ -373,7 +373,10 @@ export const useSync = () => {
           }
 
           let res;
-          if (c.id && !String(c.id).startsWith('local_')) {
+          // Un ID válido de MongoDB tiene 24 caracteres hex. Si es un número o un string corto, es local.
+          const isLocalId = typeof c.id === 'number' || (typeof c.id === 'string' && c.id.length < 24) || String(c.id).startsWith('local_');
+
+          if (c.id && !isLocalId) {
             try {
               res = await apiClient.patch(`/users/${c.id}`, payload);
             } catch (e: any) {
