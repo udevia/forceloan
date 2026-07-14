@@ -157,6 +157,10 @@ export const useSync = () => {
         }
       } catch (e: any) {
         console.error('Error subiendo cliente:', e);
+        const errorMsg = e.response?.data?.errors 
+          ? JSON.stringify(e.response.data.errors) 
+          : (e.response?.data?.message || e.message);
+        alert(`Error al subir el cliente ${c.name}: ${errorMsg}`);
       }
     }
     return true;
@@ -249,6 +253,13 @@ export const useSync = () => {
         }
       } catch (e: any) {
         console.error('Error subiendo pedido:', e);
+        if (e.response && e.response.data) {
+           const errorMsg = JSON.stringify(e.response.data.errors || e.response.data);
+           console.error('Detalles del backend:', errorMsg);
+           alert('El backend rechazó el pedido. Razón: ' + errorMsg);
+        } else {
+           alert('Error de conexión o timeout al subir el pedido.');
+        }
       }
     }
     return true;
