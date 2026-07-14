@@ -9,7 +9,7 @@ export const Catalog = () => {
   // const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const { addItem, removeItem, updateQuantity, items } = useCartStore();
 
-  const allProducts = useLiveQuery(() => db.products.toArray(), []);
+  // const allProducts = useLiveQuery(() => db.products.toArray(), []);
 
   // Extraer categorías únicas de los productos descargados
   // const categories = ['Todas', ...Array.from(new Set(allProducts?.map(p => p.category || 'Otras Categorías') || [])).sort()];
