@@ -6,21 +6,21 @@ import { useCartStore } from '../store/cartStore';
 
 export const Catalog = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
+  // const [selectedCategory, setSelectedCategory] = useState<string>('Todas');
   const { addItem, removeItem, updateQuantity, items } = useCartStore();
 
   const allProducts = useLiveQuery(() => db.products.toArray(), []);
 
   // Extraer categorías únicas de los productos descargados
-  const categories = ['Todas', ...Array.from(new Set(allProducts?.map(p => p.category || 'Otras Categorías') || [])).sort()];
+  // const categories = ['Todas', ...Array.from(new Set(allProducts?.map(p => p.category || 'Otras Categorías') || [])).sort()];
 
   const products = useLiveQuery(
     () => {
       let query = db.products.toCollection();
 
-      if (selectedCategory !== 'Todas') {
-        query = db.products.filter(p => (p.category || 'Otras Categorías') === selectedCategory);
-      }
+      // if (selectedCategory !== 'Todas') {
+      //   query = db.products.filter(p => (p.category || 'Otras Categorías') === selectedCategory);
+      // }
 
       if (searchTerm) {
         return query.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || Boolean(p.sku && p.sku.toLowerCase().includes(searchTerm.toLowerCase()))).toArray();
@@ -28,7 +28,7 @@ export const Catalog = () => {
 
       return query.toArray();
     },
-    [searchTerm, selectedCategory]
+    [searchTerm]
   );
 
   const getQuantityInCart = (productId: string) => {
