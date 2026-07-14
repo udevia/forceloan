@@ -12,6 +12,7 @@ export type SyncProgress = {
   isSyncingProducts: boolean;
   isSyncingOrders: boolean;
   isSyncingSystem: boolean;
+  errorMsg: string | null;
 };
 
 export const useSync = () => {
@@ -25,10 +26,20 @@ export const useSync = () => {
     isSyncingProducts: false,
     isSyncingOrders: false,
     isSyncingSystem: false,
+    errorMsg: null,
   });
 
   const updateProgress = (key: keyof SyncProgress, value: any) => {
     setSyncProgress(prev => ({ ...prev, [key]: value }));
+  };
+
+  const showError = (msg: string) => {
+    updateProgress('errorMsg', msg);
+    console.error(msg);
+  };
+
+  const clearError = () => {
+    updateProgress('errorMsg', null);
   };
 
   useEffect(() => {
@@ -78,7 +89,7 @@ export const useSync = () => {
 
     for (const c of pendingCustomers) {
       try {
-        const cleanDni = c.dni.replace(/\D/g, ''); 
+        const cleanDni = c.dni ? String(c.dni).replace(/\D/g, '') : '0000000'; 
         const uploadedMediaIds: string[] = [];
         if (c.document_images && c.document_images.length > 0) {
           for (let i = 0; i < c.document_images.length; i++) {
@@ -160,7 +171,7 @@ export const useSync = () => {
         const errorMsg = e.response?.data?.errors 
           ? JSON.stringify(e.response.data.errors) 
           : (e.response?.data?.message || e.message);
-        alert(`Error al subir el cliente ${c.name}: ${errorMsg}`);
+        showError(`Error al subir el cliente ${c.name}: ${errorMsg}`);
       }
     }
     return true;
@@ -255,10 +266,9 @@ export const useSync = () => {
         console.error('Error subiendo pedido:', e);
         if (e.response && e.response.data) {
            const errorMsg = JSON.stringify(e.response.data.errors || e.response.data);
-           console.error('Detalles del backend:', errorMsg);
-           alert('El backend rechazó el pedido. Razón: ' + errorMsg);
+           showError('El backend rechazó el pedido. Razón: ' + errorMsg);
         } else {
-           alert('Error de conexión o timeout al subir el pedido.');
+           showError('Error de conexión o timeout al subir el pedido.');
         }
       }
     }
@@ -300,7 +310,8 @@ export const useSync = () => {
 
   // --- MODULAR SYNC ---
   const syncCustomers = async () => {
-    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    if (!navigator.onLine) { showError('Sin conexión.'); return; }
+    clearError();
     updateProgress('isSyncingCustomers', true);
     updateProgress('customers', 0);
     
@@ -387,15 +398,17 @@ export const useSync = () => {
         });
       }
       updateProgress('customers', 100);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error en syncCustomers', err);
+      showError('Error en clientes: ' + (err.message || 'Error desconocido'));
     } finally {
       setTimeout(() => updateProgress('isSyncingCustomers', false), 1000);
     }
   };
 
   const syncProducts = async () => {
-    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    if (!navigator.onLine) { showError('Sin conexión.'); return; }
+    clearError();
     updateProgress('isSyncingProducts', true);
     updateProgress('products', 0);
     
@@ -433,7 +446,7 @@ export const useSync = () => {
 
       await db.products.clear();
       if (allProducts.length > 0) {
-        await db.products.bulkAdd(allProducts);
+        await db.products.bulkPut(allProducts);
         
         const imageUrls = allProducts.map((p: any) => p.image_url).filter(Boolean);
         setTimeout(async () => {
@@ -444,15 +457,17 @@ export const useSync = () => {
         }, 100);
       }
       updateProgress('products', 100);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error en syncProducts', err);
+      showError('Error en productos: ' + (err.message || 'Error desconocido'));
     } finally {
       setTimeout(() => updateProgress('isSyncingProducts', false), 1000);
     }
   };
 
   const syncOrders = async () => {
-    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    if (!navigator.onLine) { showError('Sin conexión.'); return; }
+    clearError();
     updateProgress('isSyncingOrders', true);
     updateProgress('orders', 0);
     
@@ -520,15 +535,17 @@ export const useSync = () => {
       }
       updateProgress('orders', 100);
       await backupToCloud();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error en syncOrders', err);
+      showError('Error en pedidos: ' + (err.message || 'Error desconocido'));
     } finally {
       setTimeout(() => updateProgress('isSyncingOrders', false), 1000);
     }
   };
 
   const syncSystemData = async () => {
-    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    if (!navigator.onLine) { showError('Sin conexión.'); return; }
+    clearError();
     updateProgress('isSyncingSystem', true);
     updateProgress('system', 0);
     
@@ -557,15 +574,17 @@ export const useSync = () => {
         });
       }
       updateProgress('system', 100);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error en syncSystemData', err);
+      showError('Error en sistema: ' + (err.message || 'Error desconocido'));
     } finally {
       setTimeout(() => updateProgress('isSyncingSystem', false), 1000);
     }
   };
 
   const syncAll = async () => {
-    if (!navigator.onLine) { alert('Sin conexión.'); return; }
+    if (!navigator.onLine) { showError('Sin conexión.'); return; }
+    clearError();
     await syncSystemData();
     await syncCustomers();
     await syncProducts();

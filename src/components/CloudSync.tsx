@@ -47,6 +47,13 @@ export const CloudSync = () => {
         
         <div className="p-4 space-y-4">
           
+          {syncProgress.errorMsg && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl shadow-sm mb-4">
+              <p className="font-bold">Error de Sincronización:</p>
+              <p className="text-sm">{syncProgress.errorMsg}</p>
+            </div>
+          )}
+
           {/* Tarjeta: Clientes */}
           <div className="border border-gray-100 bg-gray-50 p-4 rounded-xl shadow-sm flex flex-col">
             <div className="flex justify-between items-start mb-2">
