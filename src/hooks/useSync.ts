@@ -142,18 +142,38 @@ export const useSync = () => {
         let res;
         const isLocalId = typeof c.id === 'number' || (typeof c.id === 'string' && c.id.length < 24) || String(c.id).startsWith('local_');
 
-        if (c.id && !isLocalId) {
-          try {
-            res = await apiClient.patch(`/users/${c.id}`, payload);
-          } catch (e: any) {
-            if (e.response?.status === 404) {
-              res = await apiClient.post('/users', payload);
-            } else {
-              throw e;
+        try {
+          if (c.id && !isLocalId) {
+            try {
+              res = await apiClient.patch(`/users/${c.id}`, payload);
+            } catch (e: any) {
+              if (e.response?.status === 404) {
+                res = await apiClient.post('/users', payload);
+              } else {
+                throw e;
+              }
             }
+          } else {
+            res = await apiClient.post('/users', payload);
           }
-        } else {
-          res = await apiClient.post('/users', payload);
+        } catch (postErr: any) {
+          const errString = JSON.stringify(postErr.response?.data || postErr.message);
+          if (errString.includes('E11000') || errString.includes('duplicate key')) {
+            // El cliente ya existe por DNI. Lo buscamos y lo actualizamos.
+            const existRes = await apiClient.get(`/users?where[dni][equals]=${cleanDni}`);
+            if (existRes.data?.docs && existRes.data.docs.length > 0) {
+              const existingUser = existRes.data.docs[0];
+              res = await apiClient.patch(`/users/${existingUser.id}`, payload);
+              // Notificar al usuario pero sin bloquear
+              setTimeout(() => {
+                alert(`Nota: El cliente ${c.name} (DNI ${cleanDni}) ya estaba registrado en el sistema. Se ha actualizado su información localmente.`);
+              }, 100);
+            } else {
+              throw postErr;
+            }
+          } else {
+            throw postErr;
+          }
         }
         
         if (res.status === 201 || res.status === 200) {
